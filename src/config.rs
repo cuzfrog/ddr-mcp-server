@@ -5,7 +5,7 @@ use std::path::Path;
 // Struct definitions
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, PartialEq, Default)]
+#[derive(Debug, Deserialize, PartialEq, Default, Clone)]
 pub struct Config {
     #[serde(default)]
     pub index: IndexConfig,
@@ -13,7 +13,7 @@ pub struct Config {
     pub server: ServerConfig,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct IndexConfig {
     #[serde(default = "default_embedding_model")]
     pub embedding_model: String,
@@ -25,7 +25,7 @@ pub struct IndexConfig {
     pub chunk_overlap: usize,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct ServerConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,

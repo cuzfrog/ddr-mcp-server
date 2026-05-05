@@ -5,6 +5,9 @@ mod document;
 mod embedder;
 mod index;
 mod index_cmd;
+mod mcp;
+mod search;
+mod serve_cmd;
 
 use clap::Parser;
 use cli::{Cli, Commands};
@@ -18,9 +21,7 @@ async fn main() -> anyhow::Result<()> {
             index_cmd::run_index(args)?;
         }
         Commands::Serve(args) => {
-            // Stub — actual serving implemented in later tasks
-            println!("serve not implemented");
-            let _ = args; // suppress unused variable warning
+            serve_cmd::run_serve(args).await?;
         }
     }
 
