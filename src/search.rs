@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use serde::Serialize;
+
 use crate::embedder::Embedder;
 use crate::index::ChunkMetadata;
 
@@ -11,7 +13,7 @@ pub struct SearchRequest {
 }
 
 /// A ranked search result for a single source document.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SearchResult {
     pub title: String,
     pub source_path: String,
