@@ -90,6 +90,11 @@ impl Embedder {
     pub fn dims(&self) -> usize {
         self.dims
     }
+
+    /// Return a reference to the model's tokenizer for use by the chunker.
+    pub fn tokenizer(&self) -> &tokenizers::Tokenizer {
+        &self.model.tokenizer
+    }
 }
 
 // ---------------------------------------------------------------------------

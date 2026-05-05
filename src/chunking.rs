@@ -80,6 +80,15 @@ pub struct HuggingFaceTokenCounter {
 }
 
 impl HuggingFaceTokenCounter {
+    /// Create a new instance from a pre-loaded tokenizer.
+    ///
+    /// This is the preferred constructor when an [`Embedder`](crate::embedder::Embedder)
+    /// is available — the embedder already has the tokenizer loaded, so there is
+    /// no need to resolve the cache path independently.
+    pub fn from_tokenizer(tokenizer: tokenizers::Tokenizer) -> Self {
+        Self { tokenizer }
+    }
+
     /// Create a new instance by loading the tokenizer from the model cache.
     ///
     /// The tokenizer file is expected at:
