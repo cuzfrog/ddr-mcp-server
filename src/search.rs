@@ -119,7 +119,7 @@ pub fn search(
     let results: Vec<SearchResult> = top
         .into_iter()
         .map(|(score, meta)| SearchResult {
-            title: meta.section_heading.clone().unwrap_or(meta.title.clone()),
+            title: meta.title.clone(),
             source_path: meta.source_path.clone(),
             matched_content: meta.chunk_text.clone(),
             score,

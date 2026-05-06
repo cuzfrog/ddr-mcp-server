@@ -196,7 +196,8 @@ fn split_into_sections(body: &str) -> Vec<(Option<String>, String, usize)> {
         let line_len = line.len();
         let is_heading = line
             .strip_prefix("### ")
-            .or_else(|| line.strip_prefix("## "));
+            .or_else(|| line.strip_prefix("## "))
+            .or_else(|| line.strip_prefix("# "));
 
         if let Some(heading_text) = is_heading {
             let trimmed = current_body.trim().to_string();
@@ -541,6 +542,19 @@ mod tests {
         let doc2 = test_doc("whitespace", "   \n  \n  ");
         let chunks2 = chunk_document(&doc2, &test_config(), &WhitespaceTokenCounter);
         assert_eq!(chunks2.len(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional: H1 headings → section boundary
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_h1_section_boundary() {
+        let doc = test_doc("h1", "# One\nbody\n# Two\nmore");
+        let chunks = chunk_document(&doc, &test_config(), &WhitespaceTokenCounter);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].section_heading.as_deref(), Some("One"));
+        assert_eq!(chunks[1].section_heading.as_deref(), Some("Two"));
     }
 
     // -----------------------------------------------------------------------

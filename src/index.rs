@@ -26,7 +26,7 @@ pub struct IndexHeader {
 pub struct ChunkMetadata {
     pub source_path: String, // relative path to source file
     pub source_hash: String, // SHA-256 hex of the source file
-    pub title: String,       // derived from filename
+    pub title: String,       // highest-level markdown heading (filename fallback)
     #[serde(default)]
     pub chunk_text: String, // the actual chunk text content
     pub section_heading: Option<String>,
