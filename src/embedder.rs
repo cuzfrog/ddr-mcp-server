@@ -49,8 +49,7 @@ impl Embedder {
         let embedding_model = fastembed::EmbeddingModel::from_str(model_name).map_err(|_| {
             anyhow::anyhow!(
                 "Unknown embedding model '{}'. \
-                Use a valid fastembed model name such as 'BGESmallENV15Q'. \
-                See https://docs.rs/fastembed for the full list.",
+                Run `docent list-models` to see available models.",
                 model_name
             )
         })?;
