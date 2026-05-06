@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(
     name = "docent",
-    about = "A read-only MCP server for Design Decision Records"
+    about = "MCP server for Document & Code History indexing and querying."
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -19,6 +19,8 @@ pub enum Commands {
     Index(IndexArgs),
     /// Start the MCP server.
     Serve(ServeArgs),
+    /// List all supported embedding models.
+    ListModels,
 }
 
 /// Arguments for the `index` subcommand.
@@ -151,5 +153,16 @@ mod tests {
     fn test_unknown_subcommand_fails() {
         let cli = Cli::try_parse_from(["docent", "unknown"]);
         assert!(cli.is_err());
+    }
+
+    #[test]
+    fn test_list_models() {
+        let cli = Cli::try_parse_from(["docent", "list-models"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        match cli.command {
+            Commands::ListModels => {}
+            _ => panic!("expected ListModels command"),
+        }
     }
 }

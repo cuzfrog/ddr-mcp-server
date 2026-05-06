@@ -49,8 +49,7 @@ impl Embedder {
         let embedding_model = fastembed::EmbeddingModel::from_str(model_name).map_err(|_| {
             anyhow::anyhow!(
                 "Unknown embedding model '{}'. \
-                Use a valid fastembed model name such as 'BAAI/bge-small-en-v1.5'. \
-                See https://docs.rs/fastembed for the full list.",
+                Run `docent list-models` to see available models.",
                 model_name
             )
         })?;
@@ -111,13 +110,13 @@ mod tests {
 
     #[test]
     fn test_cache_dir_resolution() {
-        let result = resolve_cache_dir("BAAI/bge-small-en-v1.5");
+        let result = resolve_cache_dir("BGESmallENV15Q");
         assert!(result.is_ok());
         let path = result.unwrap();
         // The path should end with the expected suffix
         let path_str = path.to_string_lossy();
         assert!(
-            path_str.contains(".cache/docent/models/BAAI/bge-small-en-v1.5"),
+            path_str.contains(".cache/docent/models/BGESmallENV15Q"),
             "Cache path '{}' does not contain expected suffix",
             path_str
         );
@@ -128,10 +127,9 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    #[ignore]
     fn test_embed_single_string_dimensions() {
         let mut embedder =
-            Embedder::new("BAAI/bge-small-en-v1.5").expect("Failed to create embedder");
+            Embedder::new("BGESmallENV15Q").expect("Failed to create embedder");
         assert_eq!(embedder.dims(), 384);
 
         let result = embedder.embed(&["hello world"]).expect("Embedding failed");
@@ -140,10 +138,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_embed_identical_inputs_produce_identical_vectors() {
         let mut embedder =
-            Embedder::new("BAAI/bge-small-en-v1.5").expect("Failed to create embedder");
+            Embedder::new("BGESmallENV15Q").expect("Failed to create embedder");
 
         let result = embedder
             .embed(&["test text", "test text"])
@@ -156,10 +153,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_embed_batch() {
         let mut embedder =
-            Embedder::new("BAAI/bge-small-en-v1.5").expect("Failed to create embedder");
+            Embedder::new("BGESmallENV15Q").expect("Failed to create embedder");
 
         let texts = vec![
             "first string",
@@ -176,7 +172,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_invalid_model_name_error() {
         let result = Embedder::new("nonexistent/model");
         assert!(result.is_err(), "Expected error for invalid model name");

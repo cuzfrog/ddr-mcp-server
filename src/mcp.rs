@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ErrorCode};
 use rmcp::ErrorData;
-use rmcp::{tool, tool_router};
+use rmcp::{tool, tool_handler, tool_router};
+use rmcp::ServerHandler;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -44,7 +45,7 @@ pub struct DocentMcpServer {
     pub embedder: Arc<Mutex<Embedder>>,
 }
 
-#[tool_router(server_handler)]
+#[tool_router]
 impl DocentMcpServer {
     /// Search Design Decision Records by semantic similarity to the query.
     #[tool(
@@ -113,6 +114,9 @@ impl DocentMcpServer {
     }
 }
 
+#[tool_handler(router = Self::tool_router(), name = "docent-mcp")]
+impl ServerHandler for DocentMcpServer {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,7 +158,6 @@ mod tests {
     // --- DocentMcpServer construction ---
 
     #[test]
-    #[ignore]
     fn test_server_clone_is_cheap() {
         // Verify Clone compiles and doesn't deep-copy Arc data
         let _server = DocentMcpServer {
@@ -172,7 +175,7 @@ mod tests {
             vectors: Arc::new(vec![]),
             metadata: Arc::new(vec![]),
             embedder: Arc::new(Mutex::new(
-                crate::embedder::Embedder::new("BAAI/bge-small-en-v1.5").unwrap(),
+                crate::embedder::Embedder::new("BGESmallENV15Q").unwrap(),
             )),
         };
         let _clone = _server.clone(); // should compile
