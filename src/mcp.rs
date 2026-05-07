@@ -33,7 +33,7 @@ fn default_limit() -> u8 {
 pub struct DocentMcpServer {
     /// Application configuration (read-only).
     pub config: Config,
-    /// Index header from the on-disk index.
+    /// Index header from the on-disk index (prefers file/ over git/).
     pub index_header: IndexHeader,
     /// All chunk vectors loaded from the index.
     pub vectors: Arc<Vec<Vec<f32>>>,
@@ -43,6 +43,9 @@ pub struct DocentMcpServer {
     /// `Embedder` is `!Send`, so it must be locked and used inside
     /// `tokio::task::spawn_blocking`.
     pub embedder: Arc<Mutex<Embedder>>,
+    /// ISO 8601 UTC timestamp from the index header's `built_at` field.
+    /// Derived from whichever subdirectory was available at serve time.
+    pub index_time: String,
 }
 
 #[tool_router]
@@ -78,7 +81,7 @@ impl DocentMcpServer {
         let query = params.query.clone();
         let limit = params.limit as usize;
         let same_src_score_decay = self.config.search.same_src_score_decay;
-        let index_time = self.index_header.built_at.clone();
+        let index_time = self.index_time.clone();
 
         let results = tokio::task::spawn_blocking(move || {
             let mut emb = embedder.lock().unwrap();
@@ -187,6 +190,7 @@ mod tests {
             embedder: Arc::new(Mutex::new(
                 crate::embedder::Embedder::new("BGESmallENV15Q").unwrap(),
             )),
+            index_time: "2026-01-01T00:00:00Z".into(),
         };
         let _clone = _server.clone(); // should compile
     }
