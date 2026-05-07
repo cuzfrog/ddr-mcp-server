@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::cli::IndexArgs;
+use crate::cli::IndexFileArgs;
 use crate::embedder::Embedder;
 use crate::index;
 use crate::index_cmd::run_index;
@@ -119,7 +119,7 @@ loads data from the database and populates the cache for subsequent requests.
 
     let config_path = write_config(&base, &index_dir);
 
-    run_index(IndexArgs {
+    run_index(IndexFileArgs {
         file: docs_dir.clone(),
         config: config_path,
         rebuild: false,

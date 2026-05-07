@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Index(args) => {
+        Commands::IndexFile(args) => {
             index_cmd::run_index(args)?;
         }
         Commands::Serve(args) => {

@@ -539,9 +539,9 @@ fn run_incremental(config: &Config, input_root: &Path, verbose: bool) -> anyhow:
 // Public entry point: run_index
 // ---------------------------------------------------------------------------
 
-use crate::cli::IndexArgs;
+use crate::cli::IndexFileArgs;
 
-pub fn run_index(args: IndexArgs) -> anyhow::Result<()> {
+pub fn run_index(args: IndexFileArgs) -> anyhow::Result<()> {
     let config = Config::load(&args.config)?;
     let canonical = args.file.canonicalize()?;
     let input_root = if canonical.is_file() {

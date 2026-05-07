@@ -15,17 +15,19 @@ pub struct Cli {
 /// Available subcommands.
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Index a file or directory or Git history.
-    Index(IndexArgs),
+    /// Index files from a directory.
+    IndexFile(IndexFileArgs),
+    /// Index git history from a repository.
+    IndexGit(IndexGitArgs),
     /// Start the MCP server.
     Serve(ServeArgs),
     /// List all supported embedding models.
     ListModels,
 }
 
-/// Arguments for the `index` subcommand.
+/// Arguments for the `index-file` subcommand.
 #[derive(clap::Args)]
-pub struct IndexArgs {
+pub struct IndexFileArgs {
     /// Path to a file or directory to index (required).
     pub file: PathBuf,
 
@@ -38,6 +40,25 @@ pub struct IndexArgs {
     pub rebuild: bool,
 
     /// Show individual file paths as they are indexed.
+    #[arg(long)]
+    pub verbose: bool,
+}
+
+/// Arguments for the `index-git` subcommand.
+#[derive(clap::Args)]
+pub struct IndexGitArgs {
+    /// Path to a git repository (must contain .git).
+    pub file: PathBuf,
+
+    /// Path to config file (default: ./config.toml).
+    #[arg(long, default_value = "./config.toml")]
+    pub config: PathBuf,
+
+    /// Re-index full git history from scratch.
+    #[arg(long)]
+    pub rebuild: bool,
+
+    /// Show individual commits as they are indexed.
     #[arg(long)]
     pub verbose: bool,
 }
@@ -56,54 +77,54 @@ mod tests {
     use clap::Parser;
 
     #[test]
-    fn test_index_minimal_positional() {
-        let cli = Cli::try_parse_from(["docent", "index", "./ddrs"]);
+    fn test_index_file_minimal_positional() {
+        let cli = Cli::try_parse_from(["docent", "index-file", "./ddrs"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         match cli.command {
-            Commands::Index(args) => {
+            Commands::IndexFile(args) => {
                 assert_eq!(args.file, std::path::PathBuf::from("./ddrs"));
                 assert_eq!(args.config, std::path::PathBuf::from("./config.toml"));
                 assert!(!args.rebuild);
             }
-            _ => panic!("expected Index command"),
+            _ => panic!("expected IndexFile command"),
         }
     }
 
     #[test]
-    fn test_index_with_config_flag() {
+    fn test_index_file_with_config_flag() {
         let cli =
-            Cli::try_parse_from(["docent", "index", "./ddrs", "--config", "/etc/docent.toml"]);
+            Cli::try_parse_from(["docent", "index-file", "./ddrs", "--config", "/etc/docent.toml"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         match cli.command {
-            Commands::Index(args) => {
+            Commands::IndexFile(args) => {
                 assert_eq!(args.file, std::path::PathBuf::from("./ddrs"));
                 assert_eq!(args.config, std::path::PathBuf::from("/etc/docent.toml"));
             }
-            _ => panic!("expected Index command"),
+            _ => panic!("expected IndexFile command"),
         }
     }
 
     #[test]
-    fn test_index_with_rebuild_flag() {
-        let cli = Cli::try_parse_from(["docent", "index", "./ddrs", "--rebuild"]);
+    fn test_index_file_with_rebuild_flag() {
+        let cli = Cli::try_parse_from(["docent", "index-file", "./ddrs", "--rebuild"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         match cli.command {
-            Commands::Index(args) => {
+            Commands::IndexFile(args) => {
                 assert_eq!(args.file, std::path::PathBuf::from("./ddrs"));
                 assert!(args.rebuild);
             }
-            _ => panic!("expected Index command"),
+            _ => panic!("expected IndexFile command"),
         }
     }
 
     #[test]
-    fn test_index_all_flags() {
+    fn test_index_file_all_flags() {
         let cli = Cli::try_parse_from([
             "docent",
-            "index",
+            "index-file",
             "./ddrs",
             "--config",
             "custom.toml",
@@ -112,31 +133,67 @@ mod tests {
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         match cli.command {
-            Commands::Index(args) => {
+            Commands::IndexFile(args) => {
                 assert_eq!(args.file, std::path::PathBuf::from("./ddrs"));
                 assert_eq!(args.config, std::path::PathBuf::from("custom.toml"));
                 assert!(args.rebuild);
             }
-            _ => panic!("expected Index command"),
+            _ => panic!("expected IndexFile command"),
         }
     }
 
     #[test]
-    fn test_index_with_verbose_flag() {
-        let cli = Cli::try_parse_from(["docent", "index", "./ddrs", "--verbose"]);
+    fn test_index_file_verbose_flag() {
+        let cli = Cli::try_parse_from(["docent", "index-file", "./ddrs", "--verbose"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         match cli.command {
-            Commands::Index(args) => {
+            Commands::IndexFile(args) => {
                 assert!(args.verbose);
             }
-            _ => panic!("expected Index command"),
+            _ => panic!("expected IndexFile command"),
         }
     }
 
     #[test]
-    fn test_index_missing_file_fails() {
-        let cli = Cli::try_parse_from(["docent", "index"]);
+    fn test_index_file_missing_file_fails() {
+        let cli = Cli::try_parse_from(["docent", "index-file"]);
+        assert!(cli.is_err());
+    }
+
+    #[test]
+    fn test_index_git_minimal() {
+        let cli = Cli::try_parse_from(["docent", "index-git", "./my-repo"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        match cli.command {
+            Commands::IndexGit(args) => {
+                assert_eq!(args.file, std::path::PathBuf::from("./my-repo"));
+                assert_eq!(args.config, std::path::PathBuf::from("./config.toml"));
+                assert!(!args.rebuild);
+                assert!(!args.verbose);
+            }
+            _ => panic!("expected IndexGit command"),
+        }
+    }
+
+    #[test]
+    fn test_index_git_with_rebuild() {
+        let cli = Cli::try_parse_from(["docent", "index-git", "./my-repo", "--rebuild"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        match cli.command {
+            Commands::IndexGit(args) => {
+                assert_eq!(args.file, std::path::PathBuf::from("./my-repo"));
+                assert!(args.rebuild);
+            }
+            _ => panic!("expected IndexGit command"),
+        }
+    }
+
+    #[test]
+    fn test_index_git_requires_path() {
+        let cli = Cli::try_parse_from(["docent", "index-git"]);
         assert!(cli.is_err());
     }
 
