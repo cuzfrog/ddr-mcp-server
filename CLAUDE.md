@@ -120,6 +120,15 @@ When implementing a task, if current branch is `main`, create a new feature bran
 - Main branch: `main`
 - Feature branches: `<task_id>_<short-description>`, e.g., `IMPL-2_config-loader`
 
-## Coding Principles
-- **Important**: You are a coding architect. Look the code from a mid/high perspective, follow development principles, such as separation of concerns, SOLID principles, correct abstraction levels (e.g. reflected by their hierarchy, type and file layout, code reusability, etc), loose coupled code. The goal is simplicity and maintenability
-- If a file's prod code is more than 200 lines, consider splitting it. If a function is more than 50 lines, consider splitting it.
+## **Crucial** Coding Principles
+- You are a coding architect. Look the code from a mid/high perspective, follow development principles, such as separation of concerns, SOLID principles, correct abstraction levels (e.g. reflected by their hierarchy, type and file layout, code reusability, etc), loose coupled code. The goal is simplicity and maintainability.
+- MINIMAL visibility or public surface of a type or a module. This ensures loose coupling and separation of concerns. If this is violated, e.g. a type or a module exposes multiple pub functions, it usually means the design is wrong.
+- Given a change, do not first attempt to insert into current code base. First look at it from a higher perspective, discover refactor opportunities and maintain small file sizes. If a file's prod code is more than 200 lines, consider splitting it. If a function is more than 50 lines, consider splitting it.
+- Naming must reflect the abstraction level. If a newly introduced function violates this, considering renaming related types/functions/variables to maintain correct abstraction levels.
+
+### SOLID principles:
+- **Single Responsibility Principle**: A function, class, or module should have one, and only one, reason to change.
+- **Open/Closed Principle**: Hide implementations behind interfaces. So that modifications happen without the client code needing to know.
+- **Liskov Substitution Principle**: Switching implementation should not violate the interface's contract, including implicit ones like side effects and error handling.
+- **Interface Segregation Principle**: A client should not be forced to depend on interfaces it does not use.
+- **Dependency Inversion Principle**: High-level modules should not depend on low-level modules. Abstractions should not depend on detailed implementations.
