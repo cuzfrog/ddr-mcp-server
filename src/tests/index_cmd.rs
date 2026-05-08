@@ -29,7 +29,7 @@ chunk_overlap = 64
 fn read_index_at(
     path: &std::path::Path,
 ) -> (index::IndexHeader, Vec<Vec<f32>>, Vec<index::ChunkMetadata>) {
-    index::read_index(path).unwrap()
+    index::read_subdir(path, "file").unwrap()
 }
 
 #[test]
@@ -55,16 +55,16 @@ fn test_fresh_index_on_directory() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
     let (header, _vectors, metadata) = read_index_at(&index_dir);
 
-    assert_eq!(header.schema_version, 3);
+    assert_eq!(header.schema_version, crate::index::SCHEMA_VERSION);
     assert!(header.chunk_count > 0);
     assert_eq!(header.doc_count, 3);
 
@@ -73,7 +73,7 @@ fn test_fresh_index_on_directory() {
     paths.dedup();
     assert_eq!(paths, vec!["a.md", "b.txt", "sub/c.md"]);
 
-    let vectors_meta = std::fs::metadata(index_dir.join("vectors.bin")).unwrap();
+    let vectors_meta = std::fs::metadata(index_dir.join("file").join("vectors.bin")).unwrap();
     let expected_bytes = header.chunk_count * header.embedding_dims * 4;
     assert_eq!(vectors_meta.len(), expected_bytes as u64);
 
@@ -93,14 +93,14 @@ fn test_incremental_no_changes() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path.clone(),
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path.clone(),
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
-    let mtime1 = std::fs::metadata(index_dir.join("header.json"))
+    let mtime1 = std::fs::metadata(index_dir.join("file").join("header.json"))
         .unwrap()
         .modified()
         .unwrap();
@@ -108,14 +108,14 @@ fn test_incremental_no_changes() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
-    let mtime2 = std::fs::metadata(index_dir.join("header.json"))
+    let mtime2 = std::fs::metadata(index_dir.join("file").join("header.json"))
         .unwrap()
         .modified()
         .unwrap();
@@ -138,10 +138,10 @@ fn test_incremental_one_file_modified() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path.clone(),
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path.clone(),
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -150,13 +150,13 @@ fn test_incremental_one_file_modified() {
         .iter()
         .find(|m| m.source_path == "a.md")
         .unwrap()
-        .source_hash
+        .source_revision
         .clone();
     let hash_b_before: String = metadata1
         .iter()
         .find(|m| m.source_path == "b.md")
         .unwrap()
-        .source_hash
+        .source_revision
         .clone();
 
     std::fs::write(
@@ -168,10 +168,10 @@ fn test_incremental_one_file_modified() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -180,13 +180,13 @@ fn test_incremental_one_file_modified() {
         .iter()
         .find(|m| m.source_path == "a.md")
         .unwrap()
-        .source_hash
+        .source_revision
         .clone();
     let hash_b_after: String = metadata2
         .iter()
         .find(|m| m.source_path == "b.md")
         .unwrap()
-        .source_hash
+        .source_revision
         .clone();
 
     assert_ne!(
@@ -215,10 +215,10 @@ fn test_incremental_file_deleted() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path.clone(),
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path.clone(),
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -226,10 +226,10 @@ fn test_incremental_file_deleted() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -256,10 +256,10 @@ fn test_incremental_file_added() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path.clone(),
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path.clone(),
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -267,10 +267,10 @@ fn test_incremental_file_added() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -297,10 +297,10 @@ fn test_rebuild_overwrites() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path.clone(),
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path.clone(),
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -309,10 +309,10 @@ fn test_rebuild_overwrites() {
     std::fs::remove_dir_all(&index_dir).unwrap();
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: true,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: true,
+            verbose: false,
     })
     .unwrap();
 
@@ -342,10 +342,10 @@ fn test_empty_directory_produces_empty_index() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -355,7 +355,7 @@ fn test_empty_directory_produces_empty_index() {
     assert_eq!(header.doc_count, 0);
     assert!(metadata.is_empty());
 
-    let vectors_meta = std::fs::metadata(index_dir.join("vectors.bin")).unwrap();
+    let vectors_meta = std::fs::metadata(index_dir.join("file").join("vectors.bin")).unwrap();
     assert_eq!(vectors_meta.len(), 0);
 
     let _ = std::fs::remove_dir_all(&base);
@@ -374,10 +374,10 @@ fn test_binary_file_skipped() {
     let config_path = write_config(&base, &index_dir);
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
@@ -410,15 +410,15 @@ chunk_overlap = 64
     std::fs::write(&config_path1, content1).unwrap();
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path1.clone(),
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path1.clone(),
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
     let (header1, _, _) = read_index_at(&index_dir);
-    let mtime1 = std::fs::metadata(index_dir.join("header.json"))
+    let mtime1 = std::fs::metadata(index_dir.join("file").join("header.json"))
         .unwrap()
         .modified()
         .unwrap();
@@ -438,14 +438,14 @@ chunk_overlap = 32
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     run_index(IndexArgs {
-        file: docs_dir.clone(),
-        config: config_path2,
-        rebuild: false,
-        verbose: false,
+            file: docs_dir.clone(),
+            config: config_path2,
+            rebuild: false,
+            verbose: false,
     })
     .unwrap();
 
-    let mtime2 = std::fs::metadata(index_dir.join("header.json"))
+    let mtime2 = std::fs::metadata(index_dir.join("file").join("header.json"))
         .unwrap()
         .modified()
         .unwrap();

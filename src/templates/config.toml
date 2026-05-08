@@ -1,8 +1,8 @@
 # For E2E tests
 [index]
-embedding_model = "BGESmallENV15Q"   
-persist_path    = "./e2e-tests/.ddr-index"             
-chunk_size      = 512                         
+embedding_model = "BGESmallENV15Q"
+persist_path    = "./.docent-index"
+chunk_size      = 512
 chunk_overlap   = 64
 max_size_mb     = 512 # issue warning if total index size exceeds this limit
 
@@ -16,4 +16,4 @@ same_src_score_decay = 0.9  # score multiplier for subsequent chunks from same s
 
 [server]
 log_level = "debug"    # debug | info | warn | error
-port      = 7878
+port      = 7878       # default 0 = random available port

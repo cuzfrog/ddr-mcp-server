@@ -1,45 +1,6 @@
-#![allow(dead_code)]
-
 use crate::config::IndexConfig;
-use serde::{Deserialize, Serialize};
+use crate::index::{ChunkMetadata, IndexHeader, SCHEMA_VERSION};
 use std::path::Path;
-
-/// Current schema version. Increment when the index format changes
-/// in a backward-incompatible way.
-pub const SCHEMA_VERSION: u32 = 3;
-
-/// Build-time metadata written to `header.json`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct IndexHeader {
-    pub schema_version: u32,
-    pub embedding_model: String,
-    pub embedding_dims: usize,
-    pub chunk_size: usize,
-    pub chunk_overlap: usize,
-    pub built_at: String, // ISO 8601 UTC timestamp
-    pub doc_count: usize,
-    pub chunk_count: usize,
-}
-
-/// Per-chunk source provenance written to `metadata.json`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ChunkMetadata {
-    pub source_path: String, // relative path to source file
-    pub source_hash: String, // SHA-256 hex of the source file
-    pub title: String,       // highest-level markdown heading (filename fallback)
-    #[serde(default)]
-    pub chunk_text: String, // the actual chunk text content
-    pub section_heading: Option<String>,
-    pub chunk_index: usize,
-    #[serde(default)]
-    pub line_start: usize,
-    #[serde(default)]
-    pub line_end: usize,
-    /// ISO 8601 UTC timestamp of the source file's last modification time.
-    /// `None` if the mtime is unavailable (e.g., virtual filesystem).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub modified_at: Option<String>,
-}
 
 /// Write the index directory: `header.json`, `vectors.bin`, and `metadata.json`.
 ///
@@ -155,6 +116,26 @@ pub fn read_index(path: &Path) -> anyhow::Result<(IndexHeader, Vec<Vec<f32>>, Ve
     Ok((header, vectors, metadata))
 }
 
+/// Write index into the given subdirectory (e.g. "file" or "git").
+/// The `subdir` is a relative directory name like "file" or "git".
+pub fn write_index_to(
+    persist_path: &Path,
+    subdir: &str,
+    header: &IndexHeader,
+    vectors: &[Vec<f32>],
+    metadata: &[ChunkMetadata],
+) -> anyhow::Result<()> {
+    write_index(&persist_path.join(subdir), header, vectors, metadata)
+}
+
+/// Read index from a subdirectory. Returns the header, vectors, metadata.
+pub fn read_subdir(
+    persist_path: &Path,
+    subdir: &str,
+) -> anyhow::Result<(IndexHeader, Vec<Vec<f32>>, Vec<ChunkMetadata>)> {
+    read_index(&persist_path.join(subdir))
+}
+
 /// Validate that an existing `IndexHeader` is compatible with the current
 /// `IndexConfig`.  Returns `Ok(())` if all fields match; otherwise returns an
 /// error with a descriptive message instructing the user to run `--rebuild`.
@@ -193,6 +174,7 @@ pub fn validate_header(header: &IndexHeader, config: &IndexConfig) -> anyhow::Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::ChunkKind;
 
     fn test_config() -> IndexConfig {
         IndexConfig {
@@ -200,6 +182,7 @@ mod tests {
             persist_path: "/tmp/test-index".to_string(),
             chunk_size: 256,
             chunk_overlap: 32,
+            max_size_mb: 512,
         }
     }
 
@@ -213,10 +196,73 @@ mod tests {
             built_at: "2026-01-01T00:00:00Z".to_string(),
             doc_count: 2,
             chunk_count: 3,
+            last_indexed_commit: None,
         }
     }
 
-    // Test 1: write + read round-trip
+    // Test: validate_header — matching config → Ok
+    #[test]
+    fn test_validate_header_matching_config() {
+        let result = validate_header(&matching_header(), &test_config());
+        assert!(result.is_ok());
+    }
+
+    // Test: validate_header — model mismatch → error with both names
+    #[test]
+    fn test_validate_header_model_mismatch() {
+        let mut header = matching_header();
+        header.embedding_model = "old-model".to_string();
+
+        let result = validate_header(&header, &test_config());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("test-model"));
+        assert!(msg.contains("old-model"));
+        assert!(msg.contains("--rebuild"));
+    }
+
+    // Test: validate_header — chunk_size mismatch → error
+    #[test]
+    fn test_validate_header_chunk_size_mismatch() {
+        let mut header = matching_header();
+        header.chunk_size = 128;
+
+        let result = validate_header(&header, &test_config());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("256"));
+        assert!(msg.contains("128"));
+        assert!(msg.contains("--rebuild"));
+    }
+
+    // Test: validate_header — chunk_overlap mismatch → error
+    #[test]
+    fn test_validate_header_chunk_overlap_mismatch() {
+        let mut header = matching_header();
+        header.chunk_overlap = 16;
+
+        let result = validate_header(&header, &test_config());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("32"));
+        assert!(msg.contains("16"));
+        assert!(msg.contains("--rebuild"));
+    }
+
+    // Test: validate_header — schema_version mismatch
+    #[test]
+    fn test_validate_header_schema_version_mismatch() {
+        let mut header = matching_header();
+        header.schema_version = 999;
+
+        let result = validate_header(&header, &test_config());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("schema_version mismatch"));
+        assert!(msg.contains("--rebuild"));
+    }
+
+    // Test: write + read round-trip
     #[test]
     fn test_write_read_roundtrip() {
         let temp_dir = std::env::temp_dir().join("docent_test_roundtrip");
@@ -231,7 +277,7 @@ mod tests {
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc123".to_string(),
+                source_revision: "abc123".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Introduction text for Doc 1".to_string(),
                 section_heading: Some("Intro".to_string()),
@@ -239,10 +285,12 @@ mod tests {
                 line_start: 1,
                 line_end: 1,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc123".to_string(),
+                source_revision: "abc123".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Body text for Doc 1".to_string(),
                 section_heading: Some("Body".to_string()),
@@ -250,10 +298,12 @@ mod tests {
                 line_start: 1,
                 line_end: 1,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def456".to_string(),
+                source_revision: "def456".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Content for Doc 2".to_string(),
                 section_heading: None,
@@ -261,6 +311,8 @@ mod tests {
                 line_start: 1,
                 line_end: 1,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -278,7 +330,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 2: vectors.bin exact byte count
+    // Test: vectors.bin exact byte count
     #[test]
     fn test_vectors_bin_exact_byte_count() {
         let temp_dir = std::env::temp_dir().join("docent_test_byte_count");
@@ -293,7 +345,7 @@ mod tests {
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Chunk 0 text for Doc 1".to_string(),
                 section_heading: None,
@@ -301,10 +353,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Chunk 1 text for Doc 1".to_string(),
                 section_heading: None,
@@ -312,10 +366,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def".to_string(),
+                source_revision: "def".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Chunk 0 text for Doc 2".to_string(),
                 section_heading: None,
@@ -323,6 +379,8 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -337,69 +395,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 3: validate_header — matching config → Ok
-    #[test]
-    fn test_validate_header_matching_config() {
-        let result = validate_header(&matching_header(), &test_config());
-        assert!(result.is_ok());
-    }
-
-    // Test 4: validate_header — model mismatch → error with both names
-    #[test]
-    fn test_validate_header_model_mismatch() {
-        let mut header = matching_header();
-        header.embedding_model = "old-model".to_string();
-
-        let result = validate_header(&header, &test_config());
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("test-model"));
-        assert!(msg.contains("old-model"));
-        assert!(msg.contains("--rebuild"));
-    }
-
-    // Test 5: validate_header — chunk_size mismatch → error
-    #[test]
-    fn test_validate_header_chunk_size_mismatch() {
-        let mut header = matching_header();
-        header.chunk_size = 128;
-
-        let result = validate_header(&header, &test_config());
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("256"));
-        assert!(msg.contains("128"));
-        assert!(msg.contains("--rebuild"));
-    }
-
-    // Test 6: validate_header — chunk_overlap mismatch → error
-    #[test]
-    fn test_validate_header_chunk_overlap_mismatch() {
-        let mut header = matching_header();
-        header.chunk_overlap = 16;
-
-        let result = validate_header(&header, &test_config());
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("32"));
-        assert!(msg.contains("16"));
-        assert!(msg.contains("--rebuild"));
-    }
-
-    // Test 7: validate_header — schema_version mismatch
-    #[test]
-    fn test_validate_header_schema_version_mismatch() {
-        let mut header = matching_header();
-        header.schema_version = 999;
-
-        let result = validate_header(&header, &test_config());
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("schema_version mismatch"));
-        assert!(msg.contains("--rebuild"));
-    }
-
-    // Test 8: read from nonexistent path → error
+    // Test: read from nonexistent path → error
     #[test]
     fn test_read_index_nonexistent_path() {
         let path = Path::new("/nonexistent/docent_test_no_such_index");
@@ -410,7 +406,7 @@ mod tests {
         assert!(msg.contains("/nonexistent/docent_test_no_such_index"));
     }
 
-    // Test 9: read from directory with no header.json → error
+    // Test: read from directory with no header.json → error
     #[test]
     fn test_read_index_empty_directory() {
         let temp_dir = std::env::temp_dir().join("docent_test_empty_dir");
@@ -425,7 +421,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 10: corrupted vectors.bin (truncated)
+    // Test: corrupted vectors.bin (truncated)
     #[test]
     fn test_read_index_corrupted_truncated_vectors() {
         let temp_dir = std::env::temp_dir().join("docent_test_truncated");
@@ -435,7 +431,7 @@ mod tests {
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Chunk 0 text".to_string(),
                 section_heading: None,
@@ -443,10 +439,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Chunk 1 text".to_string(),
                 section_heading: None,
@@ -454,10 +452,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def".to_string(),
+                source_revision: "def".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Chunk 0 text for doc2".to_string(),
                 section_heading: None,
@@ -465,6 +465,8 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -488,7 +490,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 11: corrupted vectors.bin (extra bytes)
+    // Test: corrupted vectors.bin (extra bytes)
     #[test]
     fn test_read_index_corrupted_extra_bytes() {
         let temp_dir = std::env::temp_dir().join("docent_test_extra_bytes");
@@ -498,7 +500,7 @@ mod tests {
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Extra bytes chunk 0".to_string(),
                 section_heading: None,
@@ -506,10 +508,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Extra bytes chunk 1".to_string(),
                 section_heading: None,
@@ -517,10 +521,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def".to_string(),
+                source_revision: "def".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Extra bytes doc2 chunk 0".to_string(),
                 section_heading: None,
@@ -528,6 +534,8 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -548,7 +556,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 12: metadata count mismatch with header.chunk_count
+    // Test: metadata count mismatch with header.chunk_count
     #[test]
     fn test_read_index_metadata_count_mismatch() {
         let temp_dir = std::env::temp_dir().join("docent_test_meta_mismatch");
@@ -564,7 +572,7 @@ mod tests {
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Mismatch chunk 0".to_string(),
                 section_heading: None,
@@ -572,10 +580,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Mismatch chunk 1".to_string(),
                 section_heading: None,
@@ -583,6 +593,8 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -598,16 +610,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 13: vector count mismatch with header.chunk_count
-    // Note: vectors.bin size check ensures vectors.len() == header.chunk_count,
-    // so we test the consistency error by having metadata count differ.
+    // Test: vector count mismatch with header.chunk_count
     #[test]
     fn test_read_index_vector_count_mismatch() {
         let temp_dir = std::env::temp_dir().join("docent_test_vec_mismatch");
         let _ = std::fs::remove_dir_all(&temp_dir);
 
-        // Header says chunk_count=3, vectors.bin has 3 vectors (48 bytes),
-        // but metadata has 4 entries → consistency error
         let header = IndexHeader {
             schema_version: SCHEMA_VERSION,
             embedding_model: "test-model".to_string(),
@@ -617,14 +625,13 @@ mod tests {
             built_at: "2026-01-01T00:00:00Z".to_string(),
             doc_count: 2,
             chunk_count: 3,
+            last_indexed_commit: None,
         };
-        // Write 3 vectors worth of bytes (48 bytes)
         let vectors_bytes: Vec<u8> = (0..48).map(|i| i as u8).collect();
-        // 4 metadata entries (mismatching header.chunk_count)
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Vec mismatch chunk 0".to_string(),
                 section_heading: None,
@@ -632,10 +639,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Vec mismatch chunk 1".to_string(),
                 section_heading: None,
@@ -643,10 +652,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def".to_string(),
+                source_revision: "def".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Vec mismatch doc2 chunk 0".to_string(),
                 section_heading: None,
@@ -654,10 +665,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def".to_string(),
+                source_revision: "def".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Vec mismatch doc2 chunk 1".to_string(),
                 section_heading: None,
@@ -665,6 +678,8 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -683,7 +698,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 14: missing metadata.json
+    // Test: missing metadata.json
     #[test]
     fn test_read_index_missing_metadata() {
         let temp_dir = std::env::temp_dir().join("docent_test_missing_meta");
@@ -700,7 +715,6 @@ mod tests {
         let header_json = serde_json::to_string_pretty(&header).unwrap();
         std::fs::write(temp_dir.join("header.json"), &header_json).unwrap();
 
-        // Write vectors.bin
         let mut buf: Vec<u8> = Vec::new();
         for v in &vectors {
             for val in v.iter().copied() {
@@ -708,8 +722,6 @@ mod tests {
             }
         }
         std::fs::write(temp_dir.join("vectors.bin"), &buf).unwrap();
-
-        // No metadata.json
 
         let result = read_index(&temp_dir);
         assert!(result.is_err());
@@ -719,7 +731,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 15: missing vectors.bin
+    // Test: missing vectors.bin
     #[test]
     fn test_read_index_missing_vectors() {
         let temp_dir = std::env::temp_dir().join("docent_test_missing_vectors");
@@ -729,7 +741,7 @@ mod tests {
         let metadata = vec![
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Missing vectors chunk 0".to_string(),
                 section_heading: None,
@@ -737,10 +749,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc1.md".to_string(),
-                source_hash: "abc".to_string(),
+                source_revision: "abc".to_string(),
                 title: "Doc 1".to_string(),
                 chunk_text: "Missing vectors chunk 1".to_string(),
                 section_heading: None,
@@ -748,10 +762,12 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
             ChunkMetadata {
                 source_path: "doc2.md".to_string(),
-                source_hash: "def".to_string(),
+                source_revision: "def".to_string(),
                 title: "Doc 2".to_string(),
                 chunk_text: "Missing vectors doc2 chunk 0".to_string(),
                 section_heading: None,
@@ -759,6 +775,8 @@ mod tests {
                 line_start: 0,
                 line_end: 0,
                 modified_at: None,
+                kind: ChunkKind::File,
+                is_fresh: None,
             },
         ];
 
@@ -768,8 +786,6 @@ mod tests {
         let metadata_json = serde_json::to_vec(&metadata).unwrap();
         std::fs::write(temp_dir.join("metadata.json"), &metadata_json).unwrap();
 
-        // No vectors.bin
-
         let result = read_index(&temp_dir);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
@@ -778,7 +794,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 16: empty index (chunk_count = 0)
+    // Test: empty index (chunk_count = 0)
     #[test]
     fn test_read_index_empty() {
         let temp_dir = std::env::temp_dir().join("docent_test_empty_index");
@@ -793,6 +809,7 @@ mod tests {
             built_at: "2026-01-01T00:00:00Z".to_string(),
             doc_count: 0,
             chunk_count: 0,
+            last_indexed_commit: None,
         };
         let vectors: Vec<Vec<f32>> = vec![];
         let metadata: Vec<ChunkMetadata> = vec![];
@@ -807,7 +824,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 17: header.json with invalid JSON
+    // Test: header.json with invalid JSON
     #[test]
     fn test_read_index_invalid_json_header() {
         let temp_dir = std::env::temp_dir().join("docent_test_invalid_json");
@@ -824,7 +841,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
-    // Test 18: write_index creates parent directories
+    // Test: write_index creates parent directories
     #[test]
     fn test_write_index_creates_parent_dirs() {
         let temp_dir = std::env::temp_dir().join("docent_test_nested_dirs");
@@ -841,11 +858,12 @@ mod tests {
             built_at: "2026-01-01T00:00:00Z".to_string(),
             doc_count: 1,
             chunk_count: 1,
+            last_indexed_commit: None,
         };
         let vectors = vec![vec![1.0, 2.0, 3.0, 4.0]];
         let metadata = vec![ChunkMetadata {
             source_path: "doc.md".to_string(),
-            source_hash: "abc".to_string(),
+            source_revision: "abc".to_string(),
             title: "Doc".to_string(),
             chunk_text: "Parent dirs chunk text".to_string(),
             section_heading: None,
@@ -853,6 +871,8 @@ mod tests {
             line_start: 0,
             line_end: 0,
             modified_at: None,
+            kind: ChunkKind::File,
+            is_fresh: None,
         }];
 
         write_index(&nested_path, &header, &vectors, &metadata).unwrap();
@@ -861,6 +881,49 @@ mod tests {
         assert!(nested_path.join("header.json").exists());
         assert!(nested_path.join("vectors.bin").exists());
         assert!(nested_path.join("metadata.json").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    // Test: write_index_to and read_subdir helpers round-trip
+    #[test]
+    fn test_write_index_to_and_read_subdir_roundtrip() {
+        let temp_dir = std::env::temp_dir().join("docent_test_subdir_roundtrip");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        let header = IndexHeader {
+            schema_version: SCHEMA_VERSION,
+            embedding_model: "test-model".to_string(),
+            embedding_dims: 4,
+            chunk_size: 256,
+            chunk_overlap: 32,
+            built_at: "2026-01-01T00:00:00Z".to_string(),
+            doc_count: 1,
+            chunk_count: 1,
+            last_indexed_commit: None,
+        };
+        let vectors = vec![vec![1.0, 2.0, 3.0, 4.0]];
+        let metadata = vec![ChunkMetadata {
+            source_path: "doc.md".to_string(),
+            source_revision: "abc".to_string(),
+            title: "Doc".to_string(),
+            chunk_text: "content".to_string(),
+            section_heading: None,
+            chunk_index: 0,
+            line_start: 0,
+            line_end: 0,
+            modified_at: None,
+            kind: ChunkKind::File,
+            is_fresh: None,
+        }];
+
+        write_index_to(&temp_dir, "file", &header, &vectors, &metadata).unwrap();
+        assert!(temp_dir.join("file").join("header.json").exists());
+
+        let (read_header, read_vectors, read_metadata) = read_subdir(&temp_dir, "file").unwrap();
+        assert_eq!(read_header, header);
+        assert_eq!(read_vectors, vectors);
+        assert_eq!(read_metadata, metadata);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

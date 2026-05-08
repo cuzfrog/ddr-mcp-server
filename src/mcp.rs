@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::embedder::Embedder;
-use crate::index::{ChunkMetadata, IndexHeader};
+use crate::index::ChunkMetadata;
 use crate::search;
 
 /// Parameters for the `search_ddr` tool.
@@ -29,12 +29,9 @@ fn default_limit() -> u8 {
 
 /// Shared server state accessible to all MCP tool handlers.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct DocentMcpServer {
     /// Application configuration (read-only).
     pub config: Config,
-    /// Index header from the on-disk index.
-    pub index_header: IndexHeader,
     /// All chunk vectors loaded from the index.
     pub vectors: Arc<Vec<Vec<f32>>>,
     /// All chunk metadata loaded from the index (1:1 with `vectors`).
@@ -43,6 +40,9 @@ pub struct DocentMcpServer {
     /// `Embedder` is `!Send`, so it must be locked and used inside
     /// `tokio::task::spawn_blocking`.
     pub embedder: Arc<Mutex<Embedder>>,
+    /// ISO 8601 UTC timestamp from the index header's `built_at` field.
+    /// Derived from whichever subdirectory was available at serve time.
+    pub index_time: String,
 }
 
 #[tool_router]
@@ -77,10 +77,20 @@ impl DocentMcpServer {
         let metadata = Arc::clone(&self.metadata);
         let query = params.query.clone();
         let limit = params.limit as usize;
+        let same_src_score_decay = self.config.search.same_src_score_decay;
+        let index_time = self.index_time.clone();
 
         let results = tokio::task::spawn_blocking(move || {
             let mut emb = embedder.lock().unwrap();
-            search::search(&query, &mut emb, &vectors, &metadata, limit)
+            search::search(
+                &query,
+                &mut emb,
+                &vectors,
+                &metadata,
+                limit,
+                same_src_score_decay,
+                &index_time,
+            )
         })
         .await
         .map_err(|e| {
@@ -162,21 +172,12 @@ mod tests {
         // Verify Clone compiles and doesn't deep-copy Arc data
         let _server = DocentMcpServer {
             config: crate::config::Config::default(),
-            index_header: crate::index::IndexHeader {
-                schema_version: crate::index::SCHEMA_VERSION,
-                embedding_model: "test".into(),
-                embedding_dims: 4,
-                chunk_size: 256,
-                chunk_overlap: 32,
-                built_at: "2026-01-01T00:00:00Z".into(),
-                doc_count: 0,
-                chunk_count: 0,
-            },
             vectors: Arc::new(vec![]),
             metadata: Arc::new(vec![]),
             embedder: Arc::new(Mutex::new(
                 crate::embedder::Embedder::new("BGESmallENV15Q").unwrap(),
             )),
+            index_time: "2026-01-01T00:00:00Z".into(),
         };
         let _clone = _server.clone(); // should compile
     }

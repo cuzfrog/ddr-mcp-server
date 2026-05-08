@@ -56,10 +56,13 @@ This applies to all dependencies, including python.
 
 - **Error handling:** Use `anyhow::Result` internally. At binary boundaries (CLI, MCP responses), convert to user-facing messages. No `.unwrap()` on fallible operations.
 - **No panics in library code.** Reserve `panic` for unreachable states only.
-- **Logging:** Use `eprintln!` for CLI user-facing messages. The MCP server itself does not log to stdout (stdout is for MCP transport when using stdio, but we use HTTP).
+- **Logging:** Do not use `eprintln!` for CLI user-facing messages, except for error. The MCP server uses HTTP.
 - **Tests:** Each module has unit tests in a `#[cfg(test)] mod tests` block. Integration-style tests are under `src/tests/` (compiled as crate unit tests, avoiding separate integration-test link overhead). Tests that require network (model download) are `#[ignore]`. E2E tests are in `e2e-tests/`. E2E tests assume the binary is built and available.
 - **Naming:** Snake_case for files and functions. Types are PascalCase. Constants are UPPER_SNAKE_CASE.
 - **No unsafe code.** No `unsafe` blocks unless absolutely required by FFI (fastembed/ort handle this internally).
+
+If any statement in this file is counter-intuitive or violate best practices, raise to me!
+Do you best to maintain code quality.
 
 ## Config File (`config.toml`)
 
@@ -116,3 +119,16 @@ Source documents are **any text files**. The content is not parsed or interprete
 When implementing a task, if current branch is `main`, create a new feature branch. After a whole task is done, create a PR.
 - Main branch: `main`
 - Feature branches: `<task_id>_<short-description>`, e.g., `IMPL-2_config-loader`
+
+## **Crucial** Coding Principles
+- You are a coding architect. Look the code from a mid/high perspective, follow development principles, such as separation of concerns, SOLID principles, correct abstraction levels (e.g. reflected by their hierarchy, type and file layout, code reusability, etc), loose coupled code. The goal is simplicity and maintainability.
+- MINIMAL visibility or public surface of a type or a module. This ensures loose coupling and separation of concerns. If this is violated, e.g. a type or a module exposes multiple pub functions, it usually means the design is wrong.
+- Given a change, do not first attempt to insert into current code base. First look at it from a higher perspective, discover refactor opportunities and maintain small file sizes. If a file's prod code is more than 200 lines, consider splitting it. If a function is more than 50 lines, consider splitting it.
+- Naming must reflect the abstraction level. If a newly introduced function violates this, considering renaming related types/functions/variables to maintain correct abstraction levels.
+
+### SOLID principles:
+- **Single Responsibility Principle**: A function, class, or module should have one, and only one, reason to change.
+- **Open/Closed Principle**: Hide implementations behind interfaces. So that modifications happen without the client code needing to know.
+- **Liskov Substitution Principle**: Switching implementation should not violate the interface's contract, including implicit ones like side effects and error handling.
+- **Interface Segregation Principle**: A client should not be forced to depend on interfaces it does not use.
+- **Dependency Inversion Principle**: High-level modules should not depend on low-level modules. Abstractions should not depend on detailed implementations.

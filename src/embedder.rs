@@ -1,9 +1,16 @@
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::Context;
+
+/// Return all supported embedding models as (name, dims) pairs.
+/// Hides `fastembed` types from callers.
+pub fn list_supported_models() -> Vec<(String, usize)> {
+    fastembed::TextEmbedding::list_supported_models()
+        .iter()
+        .map(|m| (format!("{}", m.model), m.dim))
+        .collect()
+}
 
 /// Facade over `fastembed::TextEmbedding` that hides init options, model enum
 /// parsing, and dimension retrieval behind a simple three-method interface.
@@ -26,6 +33,23 @@ fn resolve_cache_dir(model_name: &str) -> anyhow::Result<PathBuf> {
 }
 
 impl Embedder {
+    /// Return the embedding dimension for `model_name` without initializing the model.
+    ///
+    /// Useful when the dimension is needed before the embedder is constructed
+    /// (e.g., for size estimation).
+    pub fn dims_for_model(model_name: &str) -> anyhow::Result<usize> {
+        let embedding_model = fastembed::EmbeddingModel::from_str(model_name).map_err(|_| {
+            anyhow::anyhow!(
+                "Unknown embedding model '{}'. \
+                Run `docent list-models` to see available models.",
+                model_name
+            )
+        })?;
+        let model_info = fastembed::TextEmbedding::get_model_info(&embedding_model)
+            .map_err(|e| anyhow::anyhow!("Failed to get model info: {}", e))?;
+        Ok(model_info.dim)
+    }
+
     /// Create a new embedder for the given model name.
     ///
     /// Downloads the model on first run and caches it at
@@ -90,9 +114,12 @@ impl Embedder {
         self.dims
     }
 
-    /// Return a reference to the model's tokenizer for use by the chunker.
-    pub fn tokenizer(&self) -> &tokenizers::Tokenizer {
-        &self.model.tokenizer
+    /// Return a clone of the underlying tokenizer.
+    ///
+    /// Callers can construct a `HuggingFaceTokenCounter` from this tokenizer
+    /// for use in chunking.
+    pub fn tokenizer(&self) -> tokenizers::Tokenizer {
+        self.model.tokenizer.clone()
     }
 }
 
