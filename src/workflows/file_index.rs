@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::index::{self, IndexRepository, SourceIndexKind};
 use crate::indexing;
 use crate::indexing::create_embedder;
-use crate::sources::file;
+use crate::sources::file::FileIndexer;
 use crate::support::progress::Progress;
 use crate::support::terminal;
 
@@ -44,13 +44,13 @@ fn run_rebuild_file(config: &Config, input_root: &std::path::Path, verbose: bool
         }
     }
 
-    let all_files = file::discover_files(input_root)?;
+    let all_files = FileIndexer::discover_files(input_root)?;
     println!("Scanning: {} files found", all_files.len());
 
     let mut embedder = create_embedder(&config.index.embedding_model)?;
     let pb = Progress::new(all_files.len() as u64, "Indexing files", verbose);
 
-    let docs = file::prepare_files(&all_files, input_root)?;
+    let docs = FileIndexer::prepare_files(&all_files, input_root)?;
     pb.finish();
 
     let batch = indexing::index_documents(&docs, &config.index, &mut embedder, None)?;
@@ -88,7 +88,7 @@ fn run_incremental_file(config: &Config, input_root: &std::path::Path, verbose: 
                     );
                 }
 
-                let (old_hashes, old_chunks_by_path) = file::extract_merge_state(&stored);
+                let (old_hashes, old_chunks_by_path) = FileIndexer::extract_merge_state(&stored);
                 (old_hashes, old_chunks_by_path, true)
             }
             Err(e) => {
@@ -100,8 +100,8 @@ fn run_incremental_file(config: &Config, input_root: &std::path::Path, verbose: 
             }
         };
 
-    let all_files = file::discover_files(input_root)?;
-    let diff = file::diff_files(&all_files, &old_hashes, input_root)?;
+    let all_files = FileIndexer::discover_files(input_root)?;
+    let diff = FileIndexer::diff_files(&all_files, &old_hashes, input_root)?;
 
     println!(
         "Processing: {} new/changed, {} deleted, {} unchanged",
@@ -116,12 +116,12 @@ fn run_incremental_file(config: &Config, input_root: &std::path::Path, verbose: 
     }
 
     let pb = Progress::new(diff.to_index.len() as u64, "Indexing files", verbose);
-    let docs = file::prepare_files(&diff.to_index, input_root)?;
+    let docs = FileIndexer::prepare_files(&diff.to_index, input_root)?;
     pb.finish();
 
     let batch = indexing::index_documents(&docs, &config.index, &mut embedder, None)?;
 
-    let merged = file::merge_incremental(
+    let merged = FileIndexer::merge_incremental(
         &all_files,
         &old_chunks_by_path,
         &batch.metadata,
