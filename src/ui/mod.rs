@@ -17,15 +17,24 @@ pub async fn handle_css() -> impl IntoResponse {
     )
 }
 
-pub async fn handle_js() -> impl IntoResponse {
-    (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        )],
-        include_str!("app.js"),
-    )
+macro_rules! js_handler {
+    ($name:ident, $file:expr) => {
+        pub async fn $name() -> impl IntoResponse {
+            (
+                [(
+                    axum::http::header::CONTENT_TYPE,
+                    "application/javascript; charset=utf-8",
+                )],
+                include_str!($file),
+            )
+        }
+    };
 }
+
+js_handler!(handle_js_app, "app.js");
+js_handler!(handle_js_mcp_client, "mcp_client.js");
+js_handler!(handle_js_search_api, "search_api.js");
+js_handler!(handle_js_view, "view.js");
 
 /// Build the HTTP router with UI static routes and the MCP endpoint.
 ///
@@ -44,6 +53,9 @@ where
             axum::routing::get(handle_index).post_service(mcp_service.clone()),
         )
         .route("/app.css", axum::routing::get(handle_css))
-        .route("/app.js", axum::routing::get(handle_js))
+        .route("/app.js", axum::routing::get(handle_js_app))
+        .route("/mcp_client.js", axum::routing::get(handle_js_mcp_client))
+        .route("/search_api.js", axum::routing::get(handle_js_search_api))
+        .route("/view.js", axum::routing::get(handle_js_view))
         .fallback_service(mcp_service)
 }
