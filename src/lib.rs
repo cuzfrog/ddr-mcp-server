@@ -1,18 +1,18 @@
-pub mod chunking;
+pub mod app;
 pub mod cli;
-pub mod config;
-pub mod document;
-pub mod embedder;
-pub mod file_index;
-pub mod git_index;
-pub mod index;
-pub mod index_cmd;
-pub mod mcp;
-pub mod progress;
-pub mod search;
-pub mod serve_cmd;
-pub mod terminal;
-pub mod ui;
+
+pub(crate) mod documents;
+pub(crate) mod chunking;
+pub(crate) mod config;
+pub(crate) mod embedder;
+pub(crate) mod index;
+pub(crate) mod sources;
+pub(crate) mod indexing;
+pub(crate) mod interfaces;
+pub(crate) mod search;
+pub(crate) mod support;
+pub(crate) mod ui;
+pub(crate) mod workflows;
 
 #[cfg(test)]
 mod tests;

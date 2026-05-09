@@ -1,24 +1,9 @@
-use std::path::Path;
+use crate::documents::ChunkKind;
+use crate::indexing::IndexableDocument;
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FileDocument {
-    pub title: String,
-    pub body: String,
-    pub source_path: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GitDocument {
-    pub commit_hash: String,
-    pub title: String,
-    pub file_path: String,
-    pub diff: String,
-    pub author_date: String,
-}
-
-// ---------------------------------------------------------------------------
-// title_from_path — derive a display title from a file path
-// ---------------------------------------------------------------------------
+use super::diff::get_file_mtime;
 
 fn title_from_path(path: &Path) -> String {
     let stem = path
@@ -29,10 +14,6 @@ fn title_from_path(path: &Path) -> String {
 
     stem.replace(['-', '_'], " ")
 }
-
-// ---------------------------------------------------------------------------
-// extract_title_from_body — highest-level markdown heading in body
-// ---------------------------------------------------------------------------
 
 fn extract_title_from_body(body: &str) -> Option<String> {
     for line in body.lines() {
@@ -67,25 +48,42 @@ fn extract_title_from_body(body: &str) -> Option<String> {
     None
 }
 
-// ---------------------------------------------------------------------------
-// load_document — read a text file from disk
-// ---------------------------------------------------------------------------
+pub fn prepare_files(
+    files: &[PathBuf],
+    input_root: &Path,
+) -> anyhow::Result<Vec<IndexableDocument>> {
+    let mut docs = Vec::new();
 
-pub fn load_file_document_from_str(source_path: &str, body: &str) -> FileDocument {
-    let path = Path::new(source_path);
-    let title = extract_title_from_body(body)
-        .unwrap_or_else(|| title_from_path(path));
+    for file in files.iter() {
+        let full_path = input_root.join(file);
+        let relative_path = file.to_string_lossy().to_string();
 
-    FileDocument {
-        title,
-        body: body.to_string(),
-        source_path: source_path.to_string(),
+        let content = match std::fs::read_to_string(&full_path) {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("WARNING: skipping binary/unreadable file '{}'", relative_path);
+                continue;
+            }
+        };
+
+        let source_revision = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let title = extract_title_from_body(&content)
+            .unwrap_or_else(|| title_from_path(Path::new(&relative_path)));
+        let mtime = get_file_mtime(&full_path);
+
+        docs.push(IndexableDocument {
+            kind: ChunkKind::File,
+            source_path: relative_path,
+            source_revision,
+            title,
+            body: content,
+            modified_at: mtime,
+            is_fresh: None,
+        });
     }
-}
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+    Ok(docs)
+}
 
 #[cfg(test)]
 mod tests {
@@ -113,21 +111,6 @@ mod tests {
     fn test_title_from_filename_underscores() {
         let path = Path::new("my_design_notes.txt");
         assert_eq!(title_from_path(path), "my design notes");
-    }
-
-    #[test]
-    fn test_load_file_document_from_str() {
-        let doc = load_file_document_from_str("/path/to/test-file.txt", "Hello, world!");
-        assert_eq!(doc.title, "test file");
-        assert_eq!(doc.body, "Hello, world!");
-        assert_eq!(doc.source_path, "/path/to/test-file.txt");
-    }
-
-    #[test]
-    fn test_load_file_document_from_str_empty() {
-        let doc = load_file_document_from_str("/path/to/empty-file.md", "");
-        assert_eq!(doc.title, "empty file");
-        assert_eq!(doc.body, "");
     }
 
     #[test]
@@ -187,12 +170,5 @@ mod tests {
     fn test_extract_title_empty_heading_skipped() {
         let body = "# \n\n## Real Heading\ncontent";
         assert_eq!(extract_title_from_body(body).as_deref(), Some("Real Heading"));
-    }
-
-    #[test]
-    fn test_load_file_document_from_str_title_from_body() {
-        let doc = load_file_document_from_str("ignored-path.md", "# My Title\n\nContent");
-        assert_eq!(doc.title, "My Title");
-        assert_eq!(doc.body, "# My Title\n\nContent");
     }
 }
