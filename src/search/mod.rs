@@ -1,3 +1,4 @@
+mod fusion;
 mod types;
 mod ranking;
 mod service;
