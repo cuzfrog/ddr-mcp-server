@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::cli::IndexArgs;
 use crate::config::Config;
-use crate::workflows;
+use crate::app::workflows;
 
 // ---------------------------------------------------------------------------
 // Public entry points

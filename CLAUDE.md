@@ -36,13 +36,12 @@ src/
 ├── cli.rs                 # CLI argument definitions (clap subcommands/args)
 │
 ├── app/                   # Application layer: wires CLI → workflows
-│   └── commands/
-│       ├── index.rs       #   run_index_file / run_index_git entry points
-│       └── serve.rs       #   run_serve: server bootstrap
-│
-├── workflows/             # High-level orchestration
-│   ├── file_index.rs      #   File indexing workflow (discover → extract → index)
-│   └── git_index.rs       #   Git history indexing workflow
+│   ├── commands/
+│   │   ├── index.rs       #   run_index_file / run_index_git entry points
+│   │   └── serve.rs       #   run_serve: server bootstrap
+│   └── workflows/         #   High-level orchestration (struct-based)
+│       ├── file_index.rs  #     File indexing workflow (discover → extract → index)
+│       └── git_index.rs   #     Git history indexing workflow
 │
 ├── config/                # Configuration loading, types, validation, defaults
 │
