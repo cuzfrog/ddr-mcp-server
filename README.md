@@ -19,9 +19,15 @@ cargo build
 ```
 
 ## Test
+
 Unit test and integration tests:
 ```sh
 cargo test
+```
+
+Web UI test:
+```sh
+cd src/ui && npm test
 ```
 
 E2E test:

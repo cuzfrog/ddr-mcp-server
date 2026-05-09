@@ -5,11 +5,14 @@
 `docent-mcp` — A read-only MCP server that lets agents find Design Decision Records explaining why code looks the way it does. Single Rust binary (`docent`) with two subcommands: `index` and `serve`.
 
 ## Build & Run & Dev Setup
-See @README.md
 
 Every development cycle must be verified by:
 1. cargo test
 2. cargo clippy
+
+After Web UI change (`src/ui/`):
+1. `cd src/ui`
+2. `npm test`
 
 After major changes, run e2e tests by:
 1. `cargo run -- serve` in background
@@ -84,14 +87,14 @@ src/
 └── tests/                 # Integration-style tests (compiled as crate unit tests)
 ```
 
-**Data flow (index):** `sources/*/` extract documents → `chunking/` splits into chunks → `embedder.rs` embeds vectors → `indexing/pipeline.rs` coordinates → `index/storage.rs` persists
+**Data flow (index):** `sources/*/` extract documents/git-history → `chunking/` splits into chunks → `embedder.rs` embeds vectors → `indexing/pipeline.rs` coordinates → `index/storage.rs` persists
 
 **Data flow (search):** `interfaces/mcp.rs` receives query → `search/service.rs` retrieves from `index/` → `search/ranking.rs` scores results → response
 
 ## Dependencies
 
 Use fixed versions. Avoid `*` or `^` to prevent unintentional updates.
-This applies to all dependencies, including python.
+This applies to all dependencies, including python and javascript.
 
 ## Conventions
 

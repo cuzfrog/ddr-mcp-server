@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import ./test-setup.js --test ./__tests__/*.test.js"
+    "test": "node --import ./__tests__/test-setup.js --test ./__tests__/*.test.js"
   },
   "devDependencies": {
     "jsdom": "=29.1.1"
