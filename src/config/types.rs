@@ -41,6 +41,16 @@ pub struct ServerConfig {
 pub struct SearchConfig {
     #[serde(default = "super::defaults::default_same_src_score_decay")]
     pub same_src_score_decay: f32,
+    #[serde(default = "super::defaults::default_fusion_strategy")]
+    pub fusion_strategy: String,
+    #[serde(default = "super::defaults::default_bm25_k1")]
+    pub bm25_k1: f32,
+    #[serde(default = "super::defaults::default_bm25_b")]
+    pub bm25_b: f32,
+    #[serde(default = "super::defaults::default_rrf_k")]
+    pub rrf_k: f32,
+    #[serde(default = "super::defaults::default_semantic_weight")]
+    pub semantic_weight: f32,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -88,6 +98,11 @@ impl Default for SearchConfig {
     fn default() -> Self {
         Self {
             same_src_score_decay: super::defaults::default_same_src_score_decay(),
+            fusion_strategy: super::defaults::default_fusion_strategy(),
+            bm25_k1: super::defaults::default_bm25_k1(),
+            bm25_b: super::defaults::default_bm25_b(),
+            rrf_k: super::defaults::default_rrf_k(),
+            semantic_weight: super::defaults::default_semantic_weight(),
         }
     }
 }
