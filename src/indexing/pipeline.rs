@@ -94,6 +94,10 @@ pub(crate) fn index_documents(
     Ok(IndexedBatch {
         vectors: all_vectors,
         metadata: batch_metadata,
+        bm25_embeddings: Vec::new(),
+        bm25_k1: 0.0,
+        bm25_b: 0.0,
+        bm25_avgdl: 0.0,
     })
 }
 

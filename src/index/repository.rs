@@ -6,22 +6,8 @@ use crate::documents::ChunkMetadata;
 use crate::index::schema::{StoredChunkMetadata, StoredIndex, VectorStore};
 use crate::index::storage::{read_index, write_index};
 use crate::index::validate_header;
+use crate::index::SourceIndexKind;
 use crate::support::fs::dir_size;
-
-#[derive(Clone, Copy)]
-pub(crate) enum SourceIndexKind {
-    File,
-    Git,
-}
-
-impl SourceIndexKind {
-    fn subdir(&self) -> &str {
-        match self {
-            SourceIndexKind::File => "file",
-            SourceIndexKind::Git => "git",
-        }
-    }
-}
 
 /// Index loaded from disk with runtime (not persisted) metadata types.
 pub(crate) struct LoadedIndex {

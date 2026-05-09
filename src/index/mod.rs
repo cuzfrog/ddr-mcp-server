@@ -4,7 +4,23 @@ mod bm25_storage;
 mod storage;
 mod validation;
 mod repository;
+mod sub_index;
 
-pub(crate) use repository::{IndexRepository, IndexSizeInfo, MergedIndex, SourceIndexKind};
+#[derive(Clone, Copy)]
+pub(crate) enum SourceIndexKind {
+    File,
+    Git,
+}
+
+impl SourceIndexKind {
+    pub(crate) fn subdir(&self) -> &str {
+        match self {
+            SourceIndexKind::File => "file",
+            SourceIndexKind::Git => "git",
+        }
+    }
+}
+
+pub(crate) use repository::{IndexRepository, IndexSizeInfo, MergedIndex};
 pub(crate) use validation::validate_header;
 pub(crate) use schema::{AnnIndex, IndexHeader, VectorStore, SCHEMA_VERSION};
