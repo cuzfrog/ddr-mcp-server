@@ -34,10 +34,10 @@ pub fn write_index(
     buf_writer.flush()
         .map_err(|e| anyhow::anyhow!("Failed to flush vectors.bin: {}", e))?;
 
-    let metadata_json = serde_json::to_vec(metadata)
+    let metadata_bytes = bincode::serialize(metadata)
         .map_err(|e| anyhow::anyhow!("Failed to serialize metadata: {}", e))?;
-    std::fs::write(path.join("metadata.json"), &metadata_json)
-        .map_err(|e| anyhow::anyhow!("Failed to write metadata.json: {}", e))?;
+    std::fs::write(path.join("metadata.bin"), &metadata_bytes)
+        .map_err(|e| anyhow::anyhow!("Failed to write metadata.bin: {}", e))?;
 
     Ok(())
 }
@@ -88,11 +88,24 @@ pub fn read_index(path: &Path) -> anyhow::Result<StoredIndex> {
         }
     };
 
-    let metadata_path = path.join("metadata.json");
+    let metadata_path = if path.join("metadata.bin").exists() {
+        path.join("metadata.bin")
+    } else if path.join("metadata.json").exists() {
+        path.join("metadata.json")
+    } else {
+        anyhow::bail!("metadata file not found at '{}'", path.display());
+    };
+
     let metadata_bytes = std::fs::read(&metadata_path)
         .map_err(|e| anyhow::anyhow!("Failed to read '{}': {}", metadata_path.display(), e))?;
-    let metadata: Vec<StoredChunkMetadata> = serde_json::from_slice(&metadata_bytes)
-        .map_err(|e| anyhow::anyhow!("Failed to parse '{}': {}", metadata_path.display(), e))?;
+
+    let metadata: Vec<StoredChunkMetadata> = if metadata_path.extension().is_some_and(|e| e == "bin") {
+        bincode::deserialize(&metadata_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to deserialize '{}': {}", metadata_path.display(), e))?
+    } else {
+        serde_json::from_slice(&metadata_bytes)
+            .map_err(|e| anyhow::anyhow!("Failed to parse '{}': {}", metadata_path.display(), e))?
+    };
 
     if vectors.len() != header.chunk_count || metadata.len() != header.chunk_count {
         anyhow::bail!(
@@ -354,8 +367,8 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
         let header_json = serde_json::to_string_pretty(&header).unwrap();
         std::fs::write(temp_dir.join("header.json"), &header_json).unwrap();
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
-        std::fs::write(temp_dir.join("metadata.json"), &metadata_json).unwrap();
+        let metadata_bytes = bincode::serialize(&metadata).unwrap();
+        std::fs::write(temp_dir.join("metadata.bin"), &metadata_bytes).unwrap();
 
         std::fs::write(temp_dir.join("vectors.bin"), &[0u8; 8]).unwrap();
 
@@ -420,8 +433,8 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
         let header_json = serde_json::to_string_pretty(&header).unwrap();
         std::fs::write(temp_dir.join("header.json"), &header_json).unwrap();
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
-        std::fs::write(temp_dir.join("metadata.json"), &metadata_json).unwrap();
+        let metadata_bytes = bincode::serialize(&metadata).unwrap();
+        std::fs::write(temp_dir.join("metadata.bin"), &metadata_bytes).unwrap();
 
         std::fs::write(temp_dir.join("vectors.bin"), &[0u8; 60]).unwrap();
 
@@ -558,8 +571,8 @@ mod tests {
         let header_json = serde_json::to_string_pretty(&header).unwrap();
         std::fs::write(temp_dir.join("header.json"), &header_json).unwrap();
         std::fs::write(temp_dir.join("vectors.bin"), &vectors_bytes).unwrap();
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
-        std::fs::write(temp_dir.join("metadata.json"), &metadata_json).unwrap();
+        let metadata_bytes = bincode::serialize(&metadata).unwrap();
+        std::fs::write(temp_dir.join("metadata.bin"), &metadata_bytes).unwrap();
 
         let result = read_index(&temp_dir);
         assert!(result.is_err());
@@ -588,7 +601,7 @@ mod tests {
         let result = read_index(&temp_dir);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("metadata.json"));
+        assert!(msg.contains("metadata file not found at"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -644,8 +657,8 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
         let header_json = serde_json::to_string_pretty(&header).unwrap();
         std::fs::write(temp_dir.join("header.json"), &header_json).unwrap();
-        let metadata_json = serde_json::to_vec(&metadata).unwrap();
-        std::fs::write(temp_dir.join("metadata.json"), &metadata_json).unwrap();
+        let metadata_bytes = bincode::serialize(&metadata).unwrap();
+        std::fs::write(temp_dir.join("metadata.bin"), &metadata_bytes).unwrap();
 
         let result = read_index(&temp_dir);
         assert!(result.is_err());
@@ -739,7 +752,7 @@ mod tests {
         assert!(nested_path.exists());
         assert!(nested_path.join("header.json").exists());
         assert!(nested_path.join("vectors.bin").exists());
-        assert!(nested_path.join("metadata.json").exists());
+        assert!(nested_path.join("metadata.bin").exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

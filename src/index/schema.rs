@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Current schema version. Increment when the index format changes
 /// in a backward-incompatible way.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// A flat memory-efficient store for fixed-dimension float vectors.
 ///
@@ -128,10 +128,10 @@ pub(crate) struct StoredChunkMetadata {
     pub line_start: usize,
     #[serde(default)]
     pub line_end: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub modified_at: Option<String>,
     pub kind: StoredChunkKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub is_fresh: Option<bool>,
 }
 
@@ -237,8 +237,9 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["kind"], "file");
-        // is_fresh must NOT be present when None
-        assert!(!parsed.as_object().unwrap().contains_key("is_fresh"));
+        // is_fresh is serialized as null when None (bincode compatibility)
+        assert_eq!(parsed["is_fresh"], serde_json::Value::Null);
+        assert_eq!(parsed["modified_at"], serde_json::Value::Null);
     }
 
     // Test: StoredChunkMetadata git serialization — kind="git", is_fresh=Some(true) → is_fresh present in JSON
