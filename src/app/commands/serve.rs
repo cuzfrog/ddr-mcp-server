@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
@@ -17,7 +16,7 @@ use crate::support::terminal;
 pub async fn run_serve(args: ServeArgs) -> anyhow::Result<()> {
     let config = Config::load(&args.config).context("Failed to load config — cannot start server")?;
 
-    let persist_path = PathBuf::from(&config.index.persist_path);
+    let persist_path = config.persist_path_buf();
     if let Some(info) = IndexRepository::check_size(&persist_path, config.index.max_size_mb)? {
         eprintln!(
             "The total index is {:.1} MB, which exceeds the configured limit of {} MB.",

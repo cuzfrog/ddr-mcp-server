@@ -4,6 +4,7 @@ use crate::config::{Config, GitConfig};
 use crate::index::{IndexRepository, SourceIndexKind};
 use crate::indexing;
 use crate::indexing::create_embedder;
+use crate::indexing::unique_doc_count;
 use crate::sources::git::GitIndexer;
 use crate::support::progress::Progress;
 use crate::support::terminal;
@@ -21,7 +22,7 @@ pub(crate) fn run_git_index(request: GitIndexRequest, config: &Config) -> anyhow
         )
     })?;
 
-    let persist_path = PathBuf::from(&config.index.persist_path);
+    let persist_path = config.persist_path_buf();
     let dims = crate::embedder::Embedder::dims_for_model(&config.index.embedding_model)?;
 
     if request.rebuild || !IndexRepository::exists(&persist_path, SourceIndexKind::Git) {
@@ -94,7 +95,7 @@ fn run_rebuild_git(
 
     let repo = IndexRepository::new(persist_path, SourceIndexKind::Git, &config.index);
     repo.store_index(dims, &batch.vectors, &batch.metadata, Some(head_commit))?;
-    let doc_count = batch.metadata.iter().map(|m| &m.source_path[..]).collect::<std::collections::HashSet<_>>().len();
+    let doc_count = unique_doc_count(&batch.metadata);
 
     println!(
         "Git index written: {} chunks from {} docs (walk: {:.1}s, embed: {:.1}s)",
@@ -154,7 +155,7 @@ fn run_incremental_git(
     );
 
     repo.store_index(dims, &merged.vectors, &merged.metadata, Some(head_commit))?;
-    let doc_count = merged.metadata.iter().map(|m| &m.source_path[..]).collect::<std::collections::HashSet<_>>().len();
+    let doc_count = unique_doc_count(&merged.metadata);
 
     println!(
         "Git index updated: {} chunks from {} docs ({} new commits, walk: {:.1}s, embed: {:.1}s)",

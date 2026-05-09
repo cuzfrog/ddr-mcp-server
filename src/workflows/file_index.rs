@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::index::{self, IndexRepository, SourceIndexKind};
 use crate::indexing;
 use crate::indexing::create_embedder;
+use crate::indexing::unique_doc_count;
 use crate::sources::file::FileIndexer;
 use crate::support::progress::Progress;
 use crate::support::terminal;
@@ -24,7 +25,7 @@ pub(crate) fn run_file_index(request: FileIndexRequest, config: &Config) -> anyh
 }
 
 fn run_rebuild_file(config: &Config, input_root: &std::path::Path, verbose: bool) -> anyhow::Result<()> {
-    let persist_path = PathBuf::from(&config.index.persist_path);
+    let persist_path = config.persist_path_buf();
     let repo = IndexRepository::new(&persist_path, SourceIndexKind::File, &config.index);
 
     match repo.load_one() {
@@ -57,7 +58,7 @@ fn run_rebuild_file(config: &Config, input_root: &std::path::Path, verbose: bool
     pb.finish();
 
     repo.store_index(embedder.dims(), &batch.vectors, &batch.metadata, None)?;
-    let doc_count = batch.metadata.iter().map(|m| &m.source_path[..]).collect::<std::collections::HashSet<_>>().len();
+    let doc_count = unique_doc_count(&batch.metadata);
 
     println!(
         "File index written: {} chunks from {} docs",
@@ -69,7 +70,7 @@ fn run_rebuild_file(config: &Config, input_root: &std::path::Path, verbose: bool
 }
 
 fn run_incremental_file(config: &Config, input_root: &std::path::Path, verbose: bool) -> anyhow::Result<()> {
-    let persist_path = PathBuf::from(&config.index.persist_path);
+    let persist_path = config.persist_path_buf();
     let repo = IndexRepository::new(&persist_path, SourceIndexKind::File, &config.index);
 
     let mut embedder = create_embedder(&config.index.embedding_model)?;
@@ -131,7 +132,7 @@ fn run_incremental_file(config: &Config, input_root: &std::path::Path, verbose: 
     );
 
     repo.store_index(embedder.dims(), &merged.vectors, &merged.metadata, None)?;
-    let doc_count = merged.metadata.iter().map(|m| &m.source_path[..]).collect::<std::collections::HashSet<_>>().len();
+    let doc_count = unique_doc_count(&merged.metadata);
 
     println!(
         "File index updated: {} chunks from {} docs",

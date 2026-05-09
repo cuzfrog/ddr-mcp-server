@@ -81,8 +81,10 @@ src/
 ├── ui/                    # Web UI (axum routes for static assets)
 │
 ├── support/               # Utilities
+│   ├── fs.rs              #   Filesystem helpers (path_to_string, dir_size, sha256_hex)
 │   ├── progress.rs        #   Progress bar rendering
-│   └── terminal.rs        #   Terminal I/O helpers
+│   ├── terminal.rs        #   Terminal I/O helpers
+│   └── time.rs            #   Time helpers (unix_to_rfc3339)
 │
 ├── templates/             # Default template files (e.g., docent.toml)
 │
