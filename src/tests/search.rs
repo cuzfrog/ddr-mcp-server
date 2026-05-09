@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use crate::documents::{ChunkKind, ChunkMetadata};
+use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
 use crate::embedder::EmbeddingService;
+use crate::index::VectorStore;
 use crate::search::{DecayRanker, VectorSearchService};
 use crate::tests::fixtures::FakeEmbedder;
 
@@ -16,16 +17,18 @@ fn make_meta(
     chunk_index: usize,
 ) -> ChunkMetadata {
     ChunkMetadata {
-        source_path: source_path.to_string(),
-        source_revision: "hash".to_string(),
-        title: title.to_string(),
+        doc_ctx: DocumentContext {
+            source_path: std::sync::Arc::from(source_path),
+            source_revision: std::sync::Arc::from("hash"),
+            title: std::sync::Arc::from(title),
+            modified_at: None,
+            kind: ChunkKind::File,
+        },
         chunk_text: chunk_text.to_string(),
         section_heading: None,
         chunk_index,
         line_start: 0,
         line_end: 0,
-        modified_at: None,
-        kind: ChunkKind::File,
         is_fresh: None,
     }
 }
@@ -38,6 +41,7 @@ fn build_search_service(
         .iter()
         .map(|t| embedder.embed(&[t]).unwrap().remove(0))
         .collect();
+    let vector_store = VectorStore::from_vec_vec(vectors).unwrap();
 
     let metadata: Vec<ChunkMetadata> = texts
         .iter()
@@ -55,7 +59,7 @@ fn build_search_service(
 
     VectorSearchService::new(
         embedder,
-        Arc::new(vectors),
+        Arc::new(vector_store),
         Arc::new(metadata),
         ranker,
         "2026-01-01T00:00:00Z".into(),
@@ -149,7 +153,7 @@ fn test_search_empty_index_returns_empty() {
     let ranker = Arc::new(DecayRanker::new(0.9));
     let svc = VectorSearchService::new(
         embedder,
-        Arc::new(vec![]),
+        Arc::new(VectorStore::from_vec_vec(vec![]).unwrap()),
         Arc::new(vec![]),
         ranker,
         "2026-01-01T00:00:00Z".into(),

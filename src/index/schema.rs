@@ -1,16 +1,190 @@
+use std::sync::Arc;
+
 use crate::config::IndexConfig;
-use crate::documents::{ChunkKind, ChunkMetadata};
+use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
 use serde::{Deserialize, Serialize};
 
 /// Current schema version. Increment when the index format changes
 /// in a backward-incompatible way.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 7;
+
+/// A flat memory-efficient store for fixed-dimension float vectors.
+///
+/// Stores all vectors in a single `Vec<f32>` allocation. Provides
+/// O(1) slice access via `get(i) -> &[f32]`. Improves cache locality
+/// during similarity search compared to `Vec<Vec<f32>>`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct VectorStore {
+    pub(crate) data: Vec<f32>,
+    pub(crate) dims: usize,
+    pub(crate) count: usize,
+}
+
+impl VectorStore {
+    /// Build a `VectorStore` from a `Vec<Vec<f32>>`, consuming the input.
+    pub fn from_vec_vec(vecs: Vec<Vec<f32>>) -> anyhow::Result<Self> {
+        let count = vecs.len();
+        if count == 0 {
+            return Ok(Self { data: vec![], dims: 0, count: 0 });
+        }
+        let dims = vecs[0].len();
+        let mut data = Vec::with_capacity(count * dims);
+        for v in vecs {
+            anyhow::ensure!(v.len() == dims, "inconsistent vector dimensions");
+            data.extend_from_slice(&v);
+        }
+        Ok(Self { data, dims, count })
+    }
+
+    /// Return a slice of the vector at index `i`.
+    pub fn get(&self, i: usize) -> &[f32] {
+        let start = i * self.dims;
+        &self.data[start..start + self.dims]
+    }
+
+    /// Number of vectors stored.
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Embedding dimensionality.
+    pub fn dims(&self) -> usize {
+        self.dims
+    }
+
+    /// Convert to `Vec<Vec<f32>>`, consuming self.
+    /// Each inner `Vec<f32>` is a copy of the original vector slice.
+    /// This is still a copy (flat → per-vec), but avoids cloning the
+    /// outer `VectorStore` struct.
+    pub fn into_vec_vec(self) -> Vec<Vec<f32>> {
+        let VectorStore { data, dims, count } = self;
+        let mut result = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = i * dims;
+            result.push(data[start..start + dims].to_vec());
+        }
+        result
+    }
+
+    /// Raw byte slice of the flat data (for zero-copy write).
+    pub fn as_bytes(&self) -> &[u8] {
+        if self.data.is_empty() {
+            return &[];
+        }
+        bytemuck::cast_slice(&self.data)
+    }
+
+    /// Concatenate two `VectorStore`s into one.
+    ///
+    /// Both stores must have the same dimensionality, unless one is empty
+    /// (in which case the non-empty store's `dims` is used).
+    pub fn concat(a: &VectorStore, b: &VectorStore) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            a.dims == b.dims || a.is_empty() || b.is_empty(),
+            "dimension mismatch: {} vs {}",
+            a.dims(),
+            b.dims()
+        );
+        let dims = if a.is_empty() { b.dims() } else { a.dims() };
+        let mut data = Vec::with_capacity((a.count + b.count) * dims);
+        data.extend_from_slice(&a.data);
+        data.extend_from_slice(&b.data);
+        Ok(Self { data, dims, count: a.count + b.count })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Approximate Nearest Neighbor index (HNSW) for fast large-scale search
+// ---------------------------------------------------------------------------
+
+/// A single vector point usable with `instant_distance::Hnsw`.
+#[derive(Clone)]
+struct AnnPoint(Vec<f32>);
+
+impl instant_distance::Point for AnnPoint {
+    fn distance(&self, other: &Self) -> f32 {
+        let dot: f32 = self.0.iter().zip(&other.0).map(|(a, b)| a * b).sum();
+        let na: f32 = self.0.iter().map(|x| x * x).sum();
+        let nb: f32 = other.0.iter().map(|x| x * x).sum();
+        let na_sqrt = na.sqrt();
+        let nb_sqrt = nb.sqrt();
+        if na_sqrt == 0.0 || nb_sqrt == 0.0 {
+            return 1.0;
+        }
+        // Cosine distance: 1 − cosine_similarity
+        1.0 - (dot / (na_sqrt * nb_sqrt))
+    }
+}
+
+/// HNSW-based approximate nearest neighbor index.
+///
+/// Built from a [`VectorStore`] during index load (not persisted separately).
+/// Only constructed for indexes with ≥ 5 000 chunks; smaller indexes use
+/// brute-force search which is faster.
+pub(crate) struct AnnIndex {
+    hnsw: instant_distance::Hnsw<AnnPoint>,
+    /// Maps HNSW-internal `PointId` → original index in the `VectorStore`.
+    inverse: Vec<usize>,
+}
+
+impl std::fmt::Debug for AnnIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnnIndex")
+            .field("inverse_len", &self.inverse.len())
+            .finish()
+    }
+}
+
+impl AnnIndex {
+    /// Build an ANN index from `vectors`.
+    ///
+    /// Returns `Ok(None)` when the vector count is below the threshold where
+    /// ANN is beneficial (currently 5 000).
+    pub fn build(vectors: &VectorStore) -> anyhow::Result<Option<Self>> {
+        if vectors.len() < 5000 {
+            return Ok(None);
+        }
+
+        let points: Vec<AnnPoint> = (0..vectors.len())
+            .map(|i| AnnPoint(vectors.get(i).to_vec()))
+            .collect();
+
+        let builder = instant_distance::Hnsw::<AnnPoint>::builder();
+        let (hnsw, ids) = builder.build_hnsw(points);
+
+        // `ids[original_idx] = shuffled_point_id` → build inverse mapping
+        let mut inverse = vec![0usize; ids.len()];
+        for (original, &shuffled) in ids.iter().enumerate() {
+            inverse[shuffled.into_inner() as usize] = original;
+        }
+
+        Ok(Some(Self { hnsw, inverse }))
+    }
+
+    /// Search for the `k` nearest neighbors of `query_vector`.
+    ///
+    /// Returns the original `VectorStore` indices so the caller can look up
+    /// metadata and re-rank with exact cosine similarity.
+    pub fn search(&self, query_vector: &[f32], k: usize) -> Vec<usize> {
+        let query_point = AnnPoint(query_vector.to_vec());
+        let mut search = instant_distance::Search::default();
+        self.hnsw
+            .search(&query_point, &mut search)
+            .take(k)
+            .map(|item| self.inverse[item.pid.into_inner() as usize])
+            .collect()
+    }
+}
 
 /// In-memory representation of an index loaded from disk.
 #[derive(Debug)]
 pub(crate) struct StoredIndex {
     pub header: IndexHeader,
-    pub vectors: Vec<Vec<f32>>,
+    pub vectors: VectorStore,
     pub metadata: Vec<StoredChunkMetadata>,
 }
 
@@ -37,10 +211,10 @@ pub(crate) struct StoredChunkMetadata {
     pub line_start: usize,
     #[serde(default)]
     pub line_end: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub modified_at: Option<String>,
     pub kind: StoredChunkKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub is_fresh: Option<bool>,
 }
 
@@ -69,16 +243,18 @@ impl From<ChunkKind> for StoredChunkKind {
 impl From<StoredChunkMetadata> for ChunkMetadata {
     fn from(m: StoredChunkMetadata) -> Self {
         ChunkMetadata {
-            source_path: m.source_path,
-            source_revision: m.source_revision,
-            title: m.title,
+            doc_ctx: DocumentContext {
+                source_path: Arc::from(m.source_path.as_str()),
+                source_revision: Arc::from(m.source_revision.as_str()),
+                title: Arc::from(m.title.as_str()),
+                modified_at: m.modified_at.as_ref().map(|s| Arc::from(s.as_str())),
+                kind: m.kind.into(),
+            },
             chunk_text: m.chunk_text,
             section_heading: m.section_heading,
             chunk_index: m.chunk_index,
             line_start: m.line_start,
             line_end: m.line_end,
-            modified_at: m.modified_at,
-            kind: m.kind.into(),
             is_fresh: m.is_fresh,
         }
     }
@@ -87,16 +263,16 @@ impl From<StoredChunkMetadata> for ChunkMetadata {
 impl From<ChunkMetadata> for StoredChunkMetadata {
     fn from(m: ChunkMetadata) -> Self {
         StoredChunkMetadata {
-            source_path: m.source_path,
-            source_revision: m.source_revision,
-            title: m.title,
+            source_path: m.doc_ctx.source_path.to_string(),
+            source_revision: m.doc_ctx.source_revision.to_string(),
+            title: m.doc_ctx.title.to_string(),
             chunk_text: m.chunk_text,
             section_heading: m.section_heading,
             chunk_index: m.chunk_index,
             line_start: m.line_start,
             line_end: m.line_end,
-            modified_at: m.modified_at,
-            kind: m.kind.into(),
+            modified_at: m.doc_ctx.modified_at.as_ref().map(|s| s.to_string()),
+            kind: m.doc_ctx.kind.into(),
             is_fresh: m.is_fresh,
         }
     }
@@ -144,8 +320,9 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["kind"], "file");
-        // is_fresh must NOT be present when None
-        assert!(!parsed.as_object().unwrap().contains_key("is_fresh"));
+        // is_fresh is serialized as null when None (bincode compatibility)
+        assert_eq!(parsed["is_fresh"], serde_json::Value::Null);
+        assert_eq!(parsed["modified_at"], serde_json::Value::Null);
     }
 
     // Test: StoredChunkMetadata git serialization — kind="git", is_fresh=Some(true) → is_fresh present in JSON
@@ -209,23 +386,25 @@ mod tests {
         };
 
         let rt: ChunkMetadata = stored.into();
-        assert_eq!(rt.kind, ChunkKind::File);
-        assert_eq!(rt.source_path, "doc.md");
+        assert_eq!(rt.doc_ctx.kind, ChunkKind::File);
+        assert_eq!(&*rt.doc_ctx.source_path, "doc.md");
     }
 
     #[test]
     fn test_runtime_to_stored_conversion() {
         let rt = ChunkMetadata {
-            source_path: "doc.md".to_string(),
-            source_revision: "abc".to_string(),
-            title: "Doc".to_string(),
+            doc_ctx: DocumentContext {
+                source_path: Arc::from("doc.md"),
+                source_revision: Arc::from("abc"),
+                title: Arc::from("Doc"),
+                modified_at: None,
+                kind: ChunkKind::Git,
+            },
             chunk_text: "content".to_string(),
             section_heading: None,
             chunk_index: 0,
             line_start: 1,
             line_end: 5,
-            modified_at: None,
-            kind: ChunkKind::Git,
             is_fresh: Some(true),
         };
 

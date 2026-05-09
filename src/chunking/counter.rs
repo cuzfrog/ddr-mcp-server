@@ -4,6 +4,7 @@
 
 pub trait TokenCounter: Send + Sync {
     /// Return the number of tokens in `text`.
+    #[cfg(test)]
     fn count_tokens(&self, text: &str) -> usize;
 
     /// Encode `text` and return (total_token_count, Vec<(byte_start, byte_end)>).
@@ -18,6 +19,7 @@ pub trait TokenCounter: Send + Sync {
 pub(crate) struct WhitespaceTokenCounter;
 
 impl TokenCounter for WhitespaceTokenCounter {
+    #[cfg(test)]
     fn count_tokens(&self, text: &str) -> usize {
         if text.trim().is_empty() {
             return 0;
@@ -63,6 +65,7 @@ impl HuggingFaceTokenCounter {
 }
 
 impl TokenCounter for HuggingFaceTokenCounter {
+    #[cfg(test)]
     fn count_tokens(&self, text: &str) -> usize {
         match self.tokenizer.encode(text, false) {
             Ok(encoding) => encoding.len(),

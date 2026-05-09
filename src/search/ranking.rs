@@ -1,4 +1,5 @@
 use crate::documents::ChunkMetadata;
+use crate::index::{AnnIndex, VectorStore};
 
 use super::types::SearchResult;
 
@@ -14,7 +15,7 @@ pub(crate) trait Ranker: Send + Sync {
     fn rank(
         &self,
         query_vector: &[f32],
-        vectors: &[Vec<f32>],
+        vectors: &VectorStore,
         metadata: &[ChunkMetadata],
         limit: usize,
         index_time: &str,
@@ -28,10 +29,12 @@ pub(crate) trait Ranker: Send + Sync {
 /// A ranker that scores candidates by cosine similarity, then applies
 /// exponential decay to subsequent chunks from the same source document
 /// to reduce redundancy in results.
+#[cfg(test)]
 pub(crate) struct DecayRanker {
     same_src_score_decay: f32,
 }
 
+#[cfg(test)]
 impl DecayRanker {
     /// Create a new ranker with the given decay factor.
     ///
@@ -44,16 +47,110 @@ impl DecayRanker {
     }
 }
 
+#[cfg(test)]
 impl Ranker for DecayRanker {
     fn rank(
         &self,
         query_vector: &[f32],
-        vectors: &[Vec<f32>],
+        vectors: &VectorStore,
         metadata: &[ChunkMetadata],
         limit: usize,
         index_time: &str,
     ) -> Vec<SearchResult> {
-        rank_results(query_vector, vectors, metadata, limit, self.same_src_score_decay, index_time)
+        rank_results_brute_force(
+            query_vector,
+            vectors,
+            metadata,
+            limit,
+            self.same_src_score_decay,
+            index_time,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AnnRanker — ranker that uses ANN for large indexes, falls back to brute
+// force for small indexes.
+// ---------------------------------------------------------------------------
+
+/// A ranker that uses an approximate nearest neighbor index for fast
+/// candidate retrieval when the index is large (≥ 5 000 chunks), falling
+/// back to brute-force search otherwise.
+///
+/// Candidates retrieved by ANN are re-ranked with exact cosine similarity
+/// and the same source-document score decay as [`DecayRanker`].
+pub(crate) struct AnnRanker {
+    same_src_score_decay: f32,
+    ann_index: Option<AnnIndex>,
+}
+
+impl AnnRanker {
+    /// Create a new ranker with the given decay factor and optional ANN index.
+    pub fn new(same_src_score_decay: f32, ann_index: Option<AnnIndex>) -> Self {
+        Self {
+            same_src_score_decay,
+            ann_index,
+        }
+    }
+}
+
+impl Ranker for AnnRanker {
+    fn rank(
+        &self,
+        query_vector: &[f32],
+        vectors: &VectorStore,
+        metadata: &[ChunkMetadata],
+        limit: usize,
+        index_time: &str,
+    ) -> Vec<SearchResult> {
+        let limit = if limit == 0 { 3 } else { limit.clamp(1, 10) };
+
+        if vectors.is_empty() || vectors.len() != metadata.len() {
+            return vec![];
+        }
+
+        // Use ANN if available (oversample by 10×, then re-rank)
+        if let Some(ann) = self.ann_index.as_ref() {
+            let candidate_count = (limit * 10).min(vectors.len());
+            let indices = ann.search(query_vector, candidate_count);
+            let candidates: Vec<(f32, &ChunkMetadata)> = indices
+                .into_iter()
+                .map(|i| (cosine_similarity(query_vector, vectors.get(i)), &metadata[i]))
+                .collect();
+            let deduped = apply_score_decay(candidates, self.same_src_score_decay);
+            let top: Vec<(f32, &ChunkMetadata)> =
+                deduped.into_iter().take(limit).collect();
+            return top
+                .into_iter()
+                .map(|(score, meta)| SearchResult {
+                    kind: meta.doc_ctx.kind.clone(),
+                    title: meta.doc_ctx.title.to_string(),
+                    source_path: meta.doc_ctx.source_path.to_string(),
+                    source_revision: meta.doc_ctx.source_revision.to_string(),
+                    matched_content: meta.chunk_text.clone(),
+                    score,
+                    line_start: meta.line_start,
+                    line_end: meta.line_end,
+                    section_heading: meta.section_heading.clone(),
+                    modified_at: meta.doc_ctx
+                        .modified_at
+                        .as_ref()
+                        .map(|s| s.to_string()),
+                    is_fresh: meta.is_fresh.unwrap_or(false),
+                    index_time: index_time.to_string(),
+                })
+                .collect();
+        }
+
+        // Fall back to brute force
+        rank_results_brute_force(
+            query_vector,
+            vectors,
+            metadata,
+            limit,
+            self.same_src_score_decay,
+            index_time,
+        )
     }
 }
 
@@ -78,7 +175,7 @@ fn apply_score_decay<'a>(
     let mut groups: std::collections::HashMap<String, Vec<(f32, &'a ChunkMetadata)>> =
         std::collections::HashMap::new();
     for (score, meta) in candidates {
-        let key = format!("{}:{}", meta.source_path, meta.source_revision);
+        let key = format!("{}:{}", meta.doc_ctx.source_path, meta.doc_ctx.source_revision);
         groups.entry(key).or_default().push((score, meta));
     }
 
@@ -95,9 +192,9 @@ fn apply_score_decay<'a>(
     results
 }
 
-fn rank_results(
+pub(crate) fn rank_results_brute_force(
     query_vector: &[f32],
-    vectors: &[Vec<f32>],
+    vectors: &VectorStore,
     metadata: &[ChunkMetadata],
     limit: usize,
     same_src_score_decay: f32,
@@ -109,10 +206,9 @@ fn rank_results(
         return vec![];
     }
 
-    let candidates: Vec<(f32, &ChunkMetadata)> = vectors
-        .iter()
+    let candidates: Vec<(f32, &ChunkMetadata)> = (0..vectors.len())
         .zip(metadata.iter())
-        .map(|(vec, meta)| (cosine_similarity(query_vector, vec), meta))
+        .map(|(i, meta)| (cosine_similarity(query_vector, vectors.get(i)), meta))
         .collect();
 
     let deduped = apply_score_decay(candidates, same_src_score_decay);
@@ -121,16 +217,16 @@ fn rank_results(
 
     top.into_iter()
         .map(|(score, meta)| SearchResult {
-            kind: meta.kind.clone(),
-            title: meta.title.clone(),
-            source_path: meta.source_path.clone(),
-            source_revision: meta.source_revision.clone(),
+            kind: meta.doc_ctx.kind.clone(),
+            title: meta.doc_ctx.title.to_string(),
+            source_path: meta.doc_ctx.source_path.to_string(),
+            source_revision: meta.doc_ctx.source_revision.to_string(),
             matched_content: meta.chunk_text.clone(),
             score,
             line_start: meta.line_start,
             line_end: meta.line_end,
             section_heading: meta.section_heading.clone(),
-            modified_at: meta.modified_at.clone(),
+            modified_at: meta.doc_ctx.modified_at.as_ref().map(|s| s.to_string()),
             is_fresh: meta.is_fresh.unwrap_or(false),
             index_time: index_time.to_string(),
         })
@@ -140,7 +236,8 @@ fn rank_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::documents::ChunkKind;
+    use crate::documents::{ChunkKind, DocumentContext};
+    use std::sync::Arc;
 
     fn make_meta(
         source_path: &str,
@@ -149,16 +246,18 @@ mod tests {
         chunk_index: usize,
     ) -> ChunkMetadata {
         ChunkMetadata {
-            source_path: source_path.to_string(),
-            source_revision: "hash".to_string(),
-            title: title.to_string(),
+            doc_ctx: DocumentContext {
+                source_path: Arc::from(source_path),
+                source_revision: Arc::from("hash"),
+                title: Arc::from(title),
+                modified_at: None,
+                kind: ChunkKind::File,
+            },
             chunk_text: chunk_text.to_string(),
             section_heading: None,
             chunk_index,
             line_start: 0,
             line_end: 0,
-            modified_at: None,
-            kind: ChunkKind::File,
             is_fresh: None,
         }
     }
