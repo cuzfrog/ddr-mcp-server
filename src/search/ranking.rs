@@ -18,6 +18,39 @@ pub(crate) trait Ranker: Send + Sync {
         limit: usize,
         index_time: &str,
     ) -> Vec<SearchResult>;
+
+    /// Like `rank` but returns pairs of (original_index, SearchResult)
+    /// so the caller can enrich results with per-backend scores.
+    fn rank_with_indices(
+        &self,
+        scores: &[f32],
+        metadata: &[ChunkMetadata],
+        limit: usize,
+        index_time: &str,
+    ) -> Vec<(usize, SearchResult)> {
+        // Default: call rank and match by identity (slower but correct)
+        let results = self.rank(scores, metadata, limit, index_time);
+        let text_to_idx: std::collections::HashMap<(&str, &str, &str), usize> = metadata
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                (
+                    (m.doc_ctx.source_path.as_ref(), m.doc_ctx.source_revision.as_ref(), m.chunk_text.as_str()),
+                    i,
+                )
+            })
+            .collect();
+        results
+            .into_iter()
+            .map(|r| {
+                let idx = text_to_idx
+                    .get(&(r.source_path.as_str(), r.source_revision.as_str(), r.matched_content.as_str()))
+                    .copied()
+                    .unwrap_or(0);
+                (idx, r)
+            })
+            .collect()
+    }
 }
 
 // ---------------------------------------------------------------------------

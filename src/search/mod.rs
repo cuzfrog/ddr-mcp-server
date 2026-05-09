@@ -1,11 +1,13 @@
 mod backend;
 mod fusion;
-mod types;
+mod orchestrator;
 mod ranking;
 mod service;
+mod types;
 
 pub(crate) use backend::*;
-#[cfg(test)]
-pub(crate) use types::*;
+pub(crate) use orchestrator::HybridSearchService;
 pub(crate) use ranking::DecayRanker;
 pub(crate) use service::*;
+#[cfg(test)]
+pub(crate) use types::*;
