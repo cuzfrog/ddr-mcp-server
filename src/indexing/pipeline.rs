@@ -1,7 +1,7 @@
 use crate::chunking::{self, ChunkingConfig};
 use crate::config::IndexConfig;
 use crate::documents::ChunkMetadata;
-use crate::embedder::EmbeddingService;
+use crate::embedder::{EmbedderFactory, EmbeddingService, RealEmbedderFactory};
 use crate::indexing::types::{IndexableDocument, IndexedBatch};
 use crate::support::progress::Progress;
 
@@ -62,5 +62,5 @@ pub(crate) fn index_documents(
 }
 
 pub(crate) fn create_embedder(model: &str) -> anyhow::Result<Box<dyn EmbeddingService>> {
-    Ok(Box::new(crate::embedder::Embedder::new(model)?))
+    RealEmbedderFactory.create(model)
 }
