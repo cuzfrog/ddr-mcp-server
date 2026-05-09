@@ -50,7 +50,8 @@ fn run_index_internal(
 
 pub fn run_index_file(args: IndexArgs) -> anyhow::Result<()> {
     let config = Config::load(&args.config)?;
-    let input_root = resolve_input_root(&args.file)?;
+    let path = args.file.unwrap_or_else(|| PathBuf::from("."));
+    let input_root = resolve_input_root(&path)?;
     run_file_index_workflow(
         &config,
         input_root,
@@ -63,7 +64,8 @@ pub fn run_index_file(args: IndexArgs) -> anyhow::Result<()> {
 
 pub fn run_index_git(args: IndexArgs) -> anyhow::Result<()> {
     let config = Config::load(&args.config)?;
-    let repo_path = resolve_repo_path(&args.file)?;
+    let path = args.file.unwrap_or_else(|| PathBuf::from("."));
+    let repo_path = resolve_repo_path(&path)?;
     run_git_index_workflow(
         &config,
         repo_path,
