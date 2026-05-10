@@ -3,7 +3,7 @@
 
 use crate::config::IndexConfig;
 use crate::embedder::{EmbedderFactory, EmbeddingService};
-use crate::indexing::{IndexableDocument, IndexedBatch, IndexingPipeline};
+use crate::app::index::pipeline::{IndexableDocument, IndexedBatch, IndexingPipeline};
 use crate::support::progress::ProgressSink;
 
 /// Run the indexing pipeline for a set of documents.

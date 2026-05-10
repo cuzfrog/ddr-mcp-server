@@ -8,7 +8,7 @@ use crate::index::stored_metadata::StoredChunkMetadata;
 use crate::index::vector_store::VectorStore;
 use crate::index::storage::{read_index, write_index};
 use crate::index::SourceIndexKind;
-use crate::indexing::{Bm25IndexBuilder, IndexedBatch};
+use crate::app::index::pipeline::{Bm25IndexBuilder, IndexedBatch};
 
 pub(crate) struct Bm25SubIndex {
     pub header: Bm25IndexHeader,

@@ -4,8 +4,8 @@ use super::{FileIndexOutcome, FileIndexRequest, FileIndexWorkflow};
 use crate::app::index::runner;
 use crate::documents::ChunkMetadata;
 use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest, VectorStore};
-use crate::indexing::IndexedBatch;
-use crate::sources::file::FileIndexer;
+use crate::app::index::pipeline::IndexedBatch;
+use crate::app::index::file::FileIndexer;
 
 type ExistingIndex = (HashMap<String, String>, Vec<ChunkMetadata>, VectorStore, bool);
 
@@ -132,7 +132,7 @@ mod tests {
     use crate::documents::ChunkKind;
     use crate::embedder::EmbeddingService;
     use crate::index::{IndexRepository, SourceIndexKind};
-    use crate::indexing::{IndexingPipeline, unique_doc_count};
+    use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, FakeEmbedderFactory, RecordingUi};
 
     fn file_config(persist: &std::path::Path) -> crate::config::Config {
@@ -148,7 +148,7 @@ mod tests {
     fn create_index_at(persist: &std::path::Path, config: &IndexConfig) {
         let repo = IndexRepository::new(persist, config);
         let mut embedder = FakeEmbedder::new();
-        let doc = crate::indexing::IndexableDocument {
+        let doc = crate::app::index::pipeline::IndexableDocument {
             source_path: "existing.md".to_string(),
             source_revision: "oldhash".to_string(),
             title: "Existing".to_string(),
@@ -198,7 +198,7 @@ mod tests {
             let mut altered_config = config.index.clone();
             altered_config.chunk_size = 999;
             let mut embedder = FakeEmbedder::new();
-            let doc = crate::indexing::IndexableDocument {
+            let doc = crate::app::index::pipeline::IndexableDocument {
                 source_path: "test.md".to_string(),
                 source_revision: "h".to_string(),
                 title: "Test".to_string(),
@@ -245,7 +245,7 @@ mod tests {
         std::fs::create_dir_all(persist.join("file")).unwrap();
         {
             let mut embedder = FakeEmbedder::new();
-            let doc = crate::indexing::IndexableDocument {
+            let doc = crate::app::index::pipeline::IndexableDocument {
                 source_path: "existing.md".to_string(),
                 source_revision: "hash".to_string(),
                 title: "Existing".to_string(),

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use crate::app::application::Application;
+use crate::app::Application;
 use crate::app::serve::server::Server;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::config::{Config, IndexConfig};
@@ -297,7 +297,7 @@ fn create_minimal_file_index(persist_path: &Path) {
     let repo = IndexRepository::new(persist_path, &config);
 
     let mut embedder = FakeEmbedder::new();
-    let doc = crate::indexing::IndexableDocument {
+    let doc = crate::app::index::pipeline::IndexableDocument {
         source_path: "test.md".to_string(),
         source_revision: "abc".to_string(),
         title: "Test".to_string(),
@@ -308,9 +308,9 @@ fn create_minimal_file_index(persist_path: &Path) {
     };
 
     let tok = embedder.token_counter();
-    let pipeline = crate::indexing::IndexingPipeline::new(&config, tok);
+    let pipeline = crate::app::index::pipeline::IndexingPipeline::new(&config, tok);
     let batch = pipeline.run(&[doc], &mut embedder, None, 1.2, 0.75).unwrap();
-    let doc_count = crate::indexing::unique_doc_count(&batch.metadata);
+    let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
     repo.store(SourceIndexKind::File, &batch, embedder.dims(), doc_count, None)
         .unwrap();
 }
@@ -339,7 +339,7 @@ fn create_git_index_without_bm25(persist_path: &Path) {
     let repo = IndexRepository::new(persist_path, &config);
 
     let mut embedder = FakeEmbedder::new();
-    let doc = crate::indexing::IndexableDocument {
+    let doc = crate::app::index::pipeline::IndexableDocument {
         source_path: "git-file.md".to_string(),
         source_revision: "def".to_string(),
         title: "Git Test".to_string(),
@@ -350,9 +350,9 @@ fn create_git_index_without_bm25(persist_path: &Path) {
     };
 
     let tok = embedder.token_counter();
-    let pipeline = crate::indexing::IndexingPipeline::new(&config, tok);
+    let pipeline = crate::app::index::pipeline::IndexingPipeline::new(&config, tok);
     let batch = pipeline.run(&[doc], &mut embedder, None, 1.2, 0.75).unwrap();
-    let doc_count = crate::indexing::unique_doc_count(&batch.metadata);
+    let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
     repo.store(SourceIndexKind::Git, &batch, embedder.dims(), doc_count, None)
         .unwrap();
 

@@ -34,7 +34,7 @@ fn process_commit(
     verbose: bool,
     progress: Option<&dyn ProgressSink>,
     commit_count: &mut usize,
-    documents: &mut Vec<crate::sources::git::extract::GitDocument>,
+    documents: &mut Vec<crate::app::index::git::extract::GitDocument>,
 ) -> anyhow::Result<bool> {
     let oid = revwalk_result?;
     let commit = repo.find_commit(oid)?;
@@ -98,7 +98,7 @@ fn process_commit(
 
         let diff_text = String::from_utf8_lossy(&patch.to_buf()?).to_string();
 
-        documents.push(crate::sources::git::extract::GitDocument {
+        documents.push(crate::app::index::git::extract::GitDocument {
             commit_hash: commit_hash.clone(),
             title: title.clone(),
             file_path,
@@ -118,7 +118,7 @@ pub fn index_git_history(
     rebuild: bool,
     verbose: bool,
     progress: Option<&dyn ProgressSink>,
-) -> anyhow::Result<Vec<crate::sources::git::extract::GitDocument>> {
+) -> anyhow::Result<Vec<crate::app::index::git::extract::GitDocument>> {
     let (repo, tip_oid) = open_repo_and_branch(repo_path, &git_config.branch)?;
     let mut revwalk = repo.revwalk()?;
     revwalk.push(tip_oid)?;

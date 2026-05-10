@@ -1,5 +1,5 @@
 use crate::documents::ChunkKind;
-use crate::indexing::IndexableDocument;
+use crate::app::index::pipeline::IndexableDocument;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GitDocument {

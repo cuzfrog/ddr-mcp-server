@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::config::GitConfig;
 use crate::documents::ChunkMetadata;
 
-use crate::sources::git::extract::GitDocument;
+use crate::app::index::git::extract::GitDocument;
 use crate::support::progress::ProgressSink;
 
 /// Facade for git-source indexing operations.
@@ -60,7 +60,7 @@ impl GitIndexer {
     pub(crate) fn prepare_git_documents(
         docs: &[GitDocument],
         freshness: &[bool],
-    ) -> Vec<crate::indexing::IndexableDocument> {
+    ) -> Vec<crate::app::index::pipeline::IndexableDocument> {
         super::extract::prepare_git_documents(docs, freshness)
     }
 

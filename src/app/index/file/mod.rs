@@ -7,6 +7,14 @@ use crate::support::ui::WorkflowUi;
 pub(crate) mod rebuild;
 pub(crate) mod incremental;
 
+mod discover;
+mod diff;
+mod extract;
+mod merge;
+mod indexer;
+
+pub(crate) use indexer::FileIndexer;
+
 pub(crate) struct FileIndexRequest {
     pub input_root: PathBuf,
     pub rebuild: bool,
@@ -28,8 +36,7 @@ pub(crate) enum FileIndexOutcome {
 }
 
 impl FileIndexOutcome {
-    /// Format this outcome into one or more user-facing messages.
-    pub(crate) fn format_for_ui(&self) -> Vec<(/* level */ &'static str, String)> {
+    pub(crate) fn format_for_ui(&self) -> Vec<(&'static str, String)> {
         match self {
             FileIndexOutcome::Aborted => vec![("info", "Aborted.".to_string())],
             FileIndexOutcome::UpToDate => {
@@ -65,11 +72,7 @@ impl<'a> FileIndexWorkflow<'a> {
         ui: &'a dyn WorkflowUi,
         embedder_factory: &'a dyn EmbedderFactory,
     ) -> Self {
-        Self {
-            config,
-            ui,
-            embedder_factory,
-        }
+        Self { config, ui, embedder_factory }
     }
 
     pub(crate) fn run(&self, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
@@ -95,11 +98,11 @@ impl<'a> FileIndexWorkflow<'a> {
 mod tests {
     use std::path::Path;
     use super::*;
+    use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
     use crate::config::IndexConfig;
     use crate::documents::ChunkKind;
     use crate::embedder::EmbeddingService;
     use crate::index::{IndexRepository, SourceIndexKind};
-    use crate::indexing::{IndexingPipeline, unique_doc_count};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
 
     fn file_config(persist: &Path) -> Config {
@@ -115,7 +118,7 @@ mod tests {
     fn create_index_at(persist: &Path, config: &IndexConfig) {
         let repo = IndexRepository::new(persist, config);
         let mut embedder = FakeEmbedder::new();
-        let doc = crate::indexing::IndexableDocument {
+        let doc = crate::app::index::pipeline::IndexableDocument {
             source_path: "existing.md".to_string(),
             source_revision: "oldhash".to_string(),
             title: "Existing".to_string(),

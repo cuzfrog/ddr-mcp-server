@@ -8,7 +8,7 @@ use crate::index::merger::IndexMerger;
 use crate::index::sub_index::SubIndex;
 use crate::index::vector_store::VectorStore;
 use crate::index::SourceIndexKind;
-use crate::indexing::{Bm25IndexBuilder, IndexedBatch, unique_doc_count};
+use crate::app::index::pipeline::{Bm25IndexBuilder, IndexedBatch, unique_doc_count};
 
 pub struct MergedIndex {
     pub vectors: VectorStore,

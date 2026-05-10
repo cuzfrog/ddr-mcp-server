@@ -4,8 +4,8 @@ use std::time::Instant;
 use crate::app::index::runner;
 use crate::config::GitConfig;
 use crate::index::{IndexRepository, SourceIndexKind};
-use crate::indexing::unique_doc_count;
-use crate::sources::git::GitIndexer;
+use crate::app::index::pipeline::unique_doc_count;
+use crate::app::index::git::GitIndexer;
 
 use super::{GitIndexOutcome, GitIndexRequest, GitIndexWorkflow};
 
@@ -15,7 +15,7 @@ impl<'a> GitIndexWorkflow<'a> {
         request: &GitIndexRequest,
         git_config: &GitConfig,
         total_est: usize,
-    ) -> anyhow::Result<(Vec<crate::sources::git::extract::GitDocument>, f64)> {
+    ) -> anyhow::Result<(Vec<crate::app::index::git::extract::GitDocument>, f64)> {
         let walk_start = Instant::now();
         let pb_walk = self.ui.progress(total_est as u64, "Walking commits", request.verbose);
         let docs = GitIndexer::index_git_history(
@@ -28,9 +28,9 @@ impl<'a> GitIndexWorkflow<'a> {
 
     fn embed_docs(
         &self,
-        docs: &[crate::sources::git::extract::GitDocument],
+        docs: &[crate::app::index::git::extract::GitDocument],
         request: &GitIndexRequest,
-    ) -> anyhow::Result<(crate::indexing::IndexedBatch, usize, f64)> {
+    ) -> anyhow::Result<(crate::app::index::pipeline::IndexedBatch, usize, f64)> {
         let total_docs = docs.len();
         let embed_start = Instant::now();
         let pb_embed = self.ui.progress(total_docs as u64, "Embedding", request.verbose);

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::documents::ChunkMetadata;
 use crate::index::VectorStore;
-use crate::indexing::IndexableDocument;
+use crate::app::index::pipeline::IndexableDocument;
 
 use super::diff::FileDiff;
 

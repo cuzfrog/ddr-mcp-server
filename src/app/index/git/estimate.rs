@@ -6,7 +6,7 @@ pub fn estimate_commit_count(
     git_config: &GitConfig,
     stop_commit: Option<&str>,
 ) -> anyhow::Result<usize> {
-    let (repo, tip_oid) = crate::sources::git::history::open_repo_and_branch(repo_path, &git_config.branch)?;
+    let (repo, tip_oid) = crate::app::index::git::history::open_repo_and_branch(repo_path, &git_config.branch)?;
     let mut revwalk = repo.revwalk()?;
     revwalk.push(tip_oid)?;
     revwalk.set_sorting(git2::Sort::TIME)?;
@@ -44,11 +44,11 @@ mod tests {
     #[test]
     fn test_estimate_commit_count_basic() {
         let tmp = TempDir::new().expect("temp dir");
-        let (repo, branch_name) = crate::sources::git::history::test_helpers::init_test_repo(tmp.path());
+        let (repo, branch_name) = crate::app::index::git::history::test_helpers::init_test_repo(tmp.path());
 
         for i in 0..5 {
             let filename = format!("f{}.txt", i);
-            crate::sources::git::history::test_helpers::commit_file(
+            crate::app::index::git::history::test_helpers::commit_file(
                 &repo, &filename, &format!("content {}", i), &format!("commit {}", i),
             );
         }
@@ -68,11 +68,11 @@ mod tests {
     #[test]
     fn test_estimate_commit_count_depth_limit() {
         let tmp = TempDir::new().expect("temp dir");
-        let (repo, branch_name) = crate::sources::git::history::test_helpers::init_test_repo(tmp.path());
+        let (repo, branch_name) = crate::app::index::git::history::test_helpers::init_test_repo(tmp.path());
 
         for i in 0..10 {
             let filename = format!("f{}.txt", i);
-            crate::sources::git::history::test_helpers::commit_file(
+            crate::app::index::git::history::test_helpers::commit_file(
                 &repo, &filename, &format!("content {}", i), &format!("commit {}", i),
             );
         }

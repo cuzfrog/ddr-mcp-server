@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::documents::{ChunkKind, ChunkMetadata};
 use crate::index::VectorStore;
 
-use crate::sources::git::extract::GitDocument;
+use crate::app::index::git::extract::GitDocument;
 
 /// Merge old and new git-index data into a single batch.
 ///
@@ -32,7 +32,7 @@ pub fn merge_git_incremental(
         }
 
         let freshness =
-            crate::sources::git::freshness::compute_freshness_from_pairs(&pairs);
+            crate::app::index::git::freshness::compute_freshness_from_pairs(&pairs);
         pairs
             .iter()
             .zip(freshness.iter())

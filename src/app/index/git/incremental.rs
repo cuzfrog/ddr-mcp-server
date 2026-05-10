@@ -4,7 +4,7 @@ use std::time::Instant;
 use crate::app::index::runner;
 use crate::config::GitConfig;
 use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest};
-use crate::sources::git::GitIndexer;
+use crate::app::index::git::GitIndexer;
 
 use super::{GitIndexOutcome, GitIndexRequest, GitIndexWorkflow};
 

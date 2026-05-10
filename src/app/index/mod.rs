@@ -1,3 +1,4 @@
-pub(crate) mod file_index;
-pub(crate) mod git_index;
+pub(crate) mod file;
+pub(crate) mod git;
+pub(crate) mod pipeline;
 pub(crate) mod runner;

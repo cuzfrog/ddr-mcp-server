@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use docent_mcp::app::application::Application;
+use docent_mcp::app::Application;
 use docent_mcp::app::serve::server::TokioHttpServer;
 use docent_mcp::app::serve::RealServeIndexAccess;
 use docent_mcp::config::Config;

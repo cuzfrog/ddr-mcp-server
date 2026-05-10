@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::config::GitConfig;
-use crate::sources::git::GitIndexer;
+use crate::app::index::git::GitIndexer;
 
 use super::GitIndexWorkflow;
 

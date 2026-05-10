@@ -1,7 +1,7 @@
 use super::{FileIndexOutcome, FileIndexRequest, FileIndexWorkflow};
 use crate::app::index::runner;
 use crate::index::{IndexRepository, SourceIndexKind};
-use crate::indexing::unique_doc_count;
+use crate::app::index::pipeline::unique_doc_count;
 
 impl<'a> FileIndexWorkflow<'a> {
     fn confirm_rebuild(&self, persist_path: &std::path::Path) -> anyhow::Result<bool> {
@@ -26,12 +26,12 @@ impl<'a> FileIndexWorkflow<'a> {
         Ok(true)
     }
 
-    fn index_files(&self, request: &FileIndexRequest) -> anyhow::Result<(crate::indexing::IndexedBatch, usize)> {
-        let all_files = crate::sources::file::FileIndexer::discover_files(&request.input_root, &self.file_glob_patterns())?;
+    fn index_files(&self, request: &FileIndexRequest) -> anyhow::Result<(crate::app::index::pipeline::IndexedBatch, usize)> {
+        let all_files = crate::app::index::file::FileIndexer::discover_files(&request.input_root, &self.file_glob_patterns())?;
         self.ui.info(&format!("Scanning: {} files found", all_files.len()));
 
         let pb = self.ui.progress(all_files.len() as u64, "Indexing files", request.verbose);
-        let docs = crate::sources::file::FileIndexer::prepare_files(&all_files, &request.input_root, self.file_size_limit_mb())?;
+        let docs = crate::app::index::file::FileIndexer::prepare_files(&all_files, &request.input_root, self.file_size_limit_mb())?;
         let (batch, dims) = runner::run_indexing_pipeline(
             self.embedder_factory,
             &self.config.index,

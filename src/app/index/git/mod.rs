@@ -9,6 +9,15 @@ pub(crate) mod rebuild;
 pub(crate) mod incremental;
 pub(crate) mod size_check;
 
+mod estimate;
+pub(crate) mod extract;
+mod freshness;
+pub(crate) mod history;
+mod merge;
+mod indexer;
+
+pub(crate) use indexer::GitIndexer;
+
 pub(crate) struct GitIndexRequest {
     pub repo_path: PathBuf,
     pub rebuild: bool,
@@ -31,8 +40,7 @@ pub(crate) enum GitIndexOutcome {
 }
 
 impl GitIndexOutcome {
-    /// Format this outcome into one or more user-facing messages.
-    pub(crate) fn format_for_ui(&self) -> Vec<(/* level */ &'static str, String)> {
+    pub(crate) fn format_for_ui(&self) -> Vec<(&'static str, String)> {
         match self {
             GitIndexOutcome::Aborted => vec![("info", "Aborted.".to_string())],
             GitIndexOutcome::UpToDate => {
@@ -70,11 +78,7 @@ impl<'a> GitIndexWorkflow<'a> {
         ui: &'a dyn WorkflowUi,
         embedder_factory: &'a dyn EmbedderFactory,
     ) -> Self {
-        Self {
-            config,
-            ui,
-            embedder_factory,
-        }
+        Self { config, ui, embedder_factory }
     }
 
     pub(crate) fn run(&self, request: GitIndexRequest) -> anyhow::Result<GitIndexOutcome> {

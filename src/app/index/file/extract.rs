@@ -1,5 +1,5 @@
 use crate::documents::ChunkKind;
-use crate::indexing::IndexableDocument;
+use crate::app::index::pipeline::IndexableDocument;
 use std::path::{Path, PathBuf};
 
 use super::diff::get_file_mtime;

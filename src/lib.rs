@@ -9,8 +9,6 @@ pub mod chunking;
 pub mod config;
 pub mod embedder;
 pub mod index;
-pub(crate) mod sources;
-pub mod indexing;
 pub(crate) mod interfaces;
 pub mod search;
 pub mod support;
