@@ -3,29 +3,54 @@ use std::collections::HashMap;
 use super::{FileIndexOutcome, FileIndexRequest, FileIndexWorkflow};
 use crate::app::workflows::runner;
 use crate::documents::ChunkMetadata;
-use crate::index::{IndexRepository, SourceIndexKind, VectorStore};
+use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest, VectorStore};
 use crate::indexing::IndexedBatch;
 use crate::sources::file::FileIndexer;
 
 type ExistingIndex = (HashMap<String, String>, Vec<ChunkMetadata>, VectorStore, bool);
 
+#[derive(Debug)]
+enum IndexLoadError {
+    NeedsRebuild(String),
+    NotFound,
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for IndexLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IndexLoadError::NeedsRebuild(reason) => write!(f, "{}", reason),
+            IndexLoadError::NotFound => write!(f, "no index found"),
+            IndexLoadError::Other(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for IndexLoadError {}
+
+impl From<anyhow::Error> for IndexLoadError {
+    fn from(e: anyhow::Error) -> Self {
+        IndexLoadError::Other(e)
+    }
+}
+
 impl<'a> FileIndexWorkflow<'a> {
-    fn load_existing_index(&self) -> anyhow::Result<ExistingIndex> {
+    fn load_existing_index(&self) -> Result<ExistingIndex, IndexLoadError> {
         let repo = IndexRepository::new(&self.config.persist_path_buf(), &self.config.index);
         match repo.load_one(SourceIndexKind::File) {
             Ok(stored) => {
                 if let Err(e) = stored.header.validate_against(&self.config.index) {
                     self.ui.warn(&format!("{}", e));
-                    anyhow::bail!("needs_rebuild:{}", e);
+                    return Err(IndexLoadError::NeedsRebuild(format!("{}", e)));
                 }
                 let old_hashes = FileIndexer::extract_old_hashes(&stored.metadata);
                 Ok((old_hashes, stored.metadata, stored.vectors, true))
             }
             Err(e) => {
                 if e.to_string().contains("no index found") {
-                    Ok(                (HashMap::new(), vec![], VectorStore::from_vec_vec(vec![])?, false))
+                    Err(IndexLoadError::NotFound)
                 } else {
-                    Err(e)
+                    Err(e.into())
                 }
             }
         }
@@ -42,15 +67,15 @@ impl<'a> FileIndexWorkflow<'a> {
     ) -> anyhow::Result<(usize, usize)> {
         let merged = FileIndexer::merge_incremental(all_files, &old_metadata, &old_vectors, &batch.metadata, &batch.vectors);
         let (merged_vectors, merged_metadata) = merged;
-        repo.store_merged(
-            SourceIndexKind::File,
+        repo.store_merged(&StoreMergedRequest {
+            kind: SourceIndexKind::File,
             merged_vectors,
             merged_metadata,
             dims,
-            None,
-            self.config.search.bm25.k1,
-            self.config.search.bm25.b,
-        )
+            last_indexed_commit: None,
+            bm25_k1: self.config.search.bm25.k1,
+            bm25_b: self.config.search.bm25.b,
+        })
     }
 
     pub(super) fn incremental(&self, request: &FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
@@ -59,18 +84,15 @@ impl<'a> FileIndexWorkflow<'a> {
 
         let (old_hashes, old_metadata, old_vectors, index_exists) = match self.load_existing_index() {
             Ok(v) => v,
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.starts_with("needs_rebuild:") {
-                    return Ok(FileIndexOutcome::NeedsRebuild {
-                        reason: format!("{} Run with --rebuild to re-index.", msg.strip_prefix("needs_rebuild:").unwrap_or(&msg)),
-                    });
-                }
-                if !msg.contains("no index found") {
-                    return Err(e);
-                }
-                    (HashMap::new(), vec![], VectorStore::from_vec_vec(vec![])?, false)
+            Err(IndexLoadError::NeedsRebuild(reason)) => {
+                return Ok(FileIndexOutcome::NeedsRebuild {
+                    reason: format!("{} Run with --rebuild to re-index.", reason),
+                });
             }
+            Err(IndexLoadError::NotFound) => {
+                (HashMap::new(), vec![], VectorStore::from_vec_vec(vec![])?, false)
+            }
+            Err(IndexLoadError::Other(e)) => return Err(e),
         };
 
         let all_files = FileIndexer::discover_files(&request.input_root, &self.file_glob_patterns())?;
@@ -87,7 +109,7 @@ impl<'a> FileIndexWorkflow<'a> {
 
         let pb = self.ui.progress(diff.to_index.len() as u64, "Indexing files", request.verbose);
         let docs = FileIndexer::prepare_files(&diff.to_index, &request.input_root, self.file_size_limit_mb())?;
-        let (batch, embedder) = runner::run_indexing_pipeline(
+        let (batch, dims) = runner::run_indexing_pipeline(
             self.embedder_factory,
             &self.config.index,
             &docs,
@@ -97,7 +119,6 @@ impl<'a> FileIndexWorkflow<'a> {
         )?;
         pb.finish();
 
-        let dims = embedder.dims();
         let (chunk_count, doc_count) = self.merge_and_store(&repo, &all_files, old_metadata, old_vectors, &batch, dims)?;
 
         Ok(FileIndexOutcome::Indexed { rebuilt: false, chunk_count, doc_count })
