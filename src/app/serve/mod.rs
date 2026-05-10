@@ -24,12 +24,12 @@ pub trait ServeIndexAccess: Send + Sync {
 }
 
 pub fn create_serve_index_access() -> impl ServeIndexAccess {
-    RealServeIndexAccess
+    ServeIndexAccessImpl
 }
 
-struct RealServeIndexAccess;
+struct ServeIndexAccessImpl;
 
-impl ServeIndexAccess for RealServeIndexAccess {
+impl ServeIndexAccess for ServeIndexAccessImpl {
     fn check_size(
         &self,
         persist_path: &Path,

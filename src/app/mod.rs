@@ -82,13 +82,7 @@ impl Application {
     }
 
     pub async fn run_serve(&self, config: &Config) -> anyhow::Result<()> {
-        let prepared = crate::app::serve::server::prepare_serve(
-            &*self.index_access,
-            &*self.embedder_factory,
-            config,
-            &*self.ui,
-        )?;
-        self.server.serve(prepared.router, config.server.port, &*self.ui).await
+        self.server.serve(config, &*self.index_access, &*self.embedder_factory, &*self.ui).await
     }
 
     fn emit_outcome(&self, outcome: Vec<(&'static str, String)>) {
