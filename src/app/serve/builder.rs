@@ -51,10 +51,10 @@ pub(crate) fn build_hybrid_search_service(
     index_config: &IndexConfig,
 ) -> anyhow::Result<HybridSearchService> {
     // Build semantic backend
-    let vectors: Vec<Vec<f32>> = merged.vectors.into_vec_vec();
+    let vector_store = Arc::new(merged.vectors);
     let semantic_backend = Arc::new(VectorScoreBackend::new(
         embedder,
-        Arc::new(vectors),
+        Arc::clone(&vector_store),
     )) as Arc<dyn ScoreBackend>;
 
     // Build BM25 backend
