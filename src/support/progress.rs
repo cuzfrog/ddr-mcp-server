@@ -28,7 +28,10 @@ impl Progress {
         } else {
             format!("  {label}: {{pos}}/{{len}} {{wide_bar}}")
         };
-        pb.set_style(ProgressStyle::with_template(&template).unwrap());
+        pb.set_style(
+            ProgressStyle::with_template(&template)
+                .expect("Progress bar template should be valid"),
+        );
         Progress { pb, verbose }
     }
 

@@ -29,6 +29,34 @@ pub(crate) enum GitIndexOutcome {
     },
 }
 
+impl GitIndexOutcome {
+    /// Format this outcome into one or more user-facing messages.
+    pub(crate) fn format_for_ui(&self) -> Vec<(/* level */ &'static str, String)> {
+        match self {
+            GitIndexOutcome::Aborted => vec![("info", "Aborted.".to_string())],
+            GitIndexOutcome::UpToDate => {
+                vec![("info", "Git index is up to date.".to_string())]
+            }
+            GitIndexOutcome::NoDocuments => {
+                vec![("info", "No git documents found.".to_string())]
+            }
+            GitIndexOutcome::Indexed { rebuilt, chunk_count, doc_count, new_commit_count, walk_secs, embed_secs } => {
+                if *rebuilt {
+                    vec![("info", format!(
+                        "Git index written: {} chunks from {} docs (walk: {:.1}s, embed: {:.1}s)",
+                        chunk_count, doc_count, walk_secs, embed_secs
+                    ))]
+                } else {
+                    vec![("info", format!(
+                        "Git index updated: {} chunks from {} docs ({} new commits, walk: {:.1}s, embed: {:.1}s)",
+                        chunk_count, doc_count, new_commit_count, walk_secs, embed_secs
+                    ))]
+                }
+            }
+        }
+    }
+}
+
 pub(crate) struct GitIndexWorkflow<'a> {
     config: &'a Config,
     ui: &'a dyn WorkflowUi,

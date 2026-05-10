@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
 use crate::search::{
-    backend::ScoreBackend, builder::HybridSearchServiceBuilder, create_fusion, DecayRanker,
-    HybridSearchService,
+    builder::HybridSearchServiceBuilder, create_fusion, DecayRanker, HybridSearchService,
+    ScoreBackend, SearchService,
 };
 
 // ---------------------------------------------------------------------------
@@ -77,7 +77,7 @@ fn build_hybrid_service_with_boost(
     let bm25_backend = Arc::new(FakeScoreBackend {
         scores: bm25_scores,
     });
-    let fusion = create_fusion("rrf", 60.0, 0.7);
+    let fusion = create_fusion("rrf", 60.0, 0.7).unwrap();
     let ranker = Arc::new(DecayRanker::new(0.9, file_hint_boost));
 
     HybridSearchServiceBuilder::new()
@@ -88,6 +88,7 @@ fn build_hybrid_service_with_boost(
         .metadata(Arc::new(metadata))
         .index_time("2026-01-01T00:00:00Z".into())
         .build()
+        .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -257,7 +258,7 @@ fn test_file_hint_boost_with_decay_interaction() {
 
     let semantic_backend = Arc::new(FakeScoreBackend { scores: semantic_scores });
     let bm25_backend = Arc::new(FakeScoreBackend { scores: bm25_scores });
-    let fusion = create_fusion("rrf", 60.0, 0.7);
+    let fusion = create_fusion("rrf", 60.0, 0.7).unwrap();
     let ranker = Arc::new(DecayRanker::new(0.5, 1.5));
     let svc = HybridSearchServiceBuilder::new()
         .semantic_backend(semantic_backend)
@@ -266,7 +267,8 @@ fn test_file_hint_boost_with_decay_interaction() {
         .ranker(ranker)
         .metadata(Arc::new(metadata))
         .index_time("now".into())
-        .build();
+        .build()
+        .unwrap();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(svc.search("test", 10, "same.md")).unwrap();
