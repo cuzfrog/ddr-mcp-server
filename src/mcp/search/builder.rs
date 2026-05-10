@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 use crate::mcp::search::backend::ScoreBackend;
 use crate::mcp::search::fusion::ScoreFusion;
 use crate::mcp::search::orchestrator::HybridSearchService;

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::config::GitConfig;
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 
 use crate::app::index::git::extract::GitDocument;
 use crate::support::progress::ProgressSink;

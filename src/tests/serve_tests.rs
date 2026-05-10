@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::app::serve::server::prepare_serve;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::config::{Config, IndexConfig};
-use crate::embedder::{EmbedderFactory, EmbeddingService};
+use crate::index::embedder::{EmbedderFactory, EmbeddingService};
 use crate::index::VectorStore;
 use crate::index::{
     read_bm25_index, IndexRepository, IndexSizeInfo, LoadMergedResult, MergedIndex,
@@ -262,7 +262,7 @@ fn create_minimal_file_index(persist_path: &Path) {
         title: "Test".to_string(),
         body: "Hello world".to_string(),
         modified_at: None,
-        kind: crate::documents::ChunkKind::File,
+        kind: crate::domain::ChunkKind::File,
         is_fresh: None,
     };
 
@@ -304,7 +304,7 @@ fn create_git_index_without_bm25(persist_path: &Path) {
         title: "Git Test".to_string(),
         body: "Git commit content for testing.".to_string(),
         modified_at: None,
-        kind: crate::documents::ChunkKind::Git,
+        kind: crate::domain::ChunkKind::Git,
         is_fresh: None,
     };
 

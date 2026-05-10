@@ -2,7 +2,7 @@
 //! execution into a single lifecycle step used by both file and git workflows.
 
 use crate::config::IndexConfig;
-use crate::embedder::{EmbedderFactory, EmbeddingService};
+use crate::index::embedder::{EmbedderFactory, EmbeddingService};
 use crate::app::index::pipeline::{IndexableDocument, IndexedBatch, IndexingPipeline};
 use crate::support::progress::ProgressSink;
 

@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::embedder::EmbeddingService;
+use crate::index::embedder::EmbeddingService;
 use crate::index::VectorStore;
 
 // ---------------------------------------------------------------------------

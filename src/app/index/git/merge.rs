@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::documents::{ChunkKind, ChunkMetadata};
+use crate::domain::{ChunkKind, ChunkMetadata};
 use crate::index::VectorStore;
 
 use crate::app::index::git::extract::GitDocument;

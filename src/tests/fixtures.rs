@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use crate::app::index::chunking::TokenCounter;
 use crate::config::IndexConfig;
-use crate::documents::ChunkMetadata;
-use crate::embedder::{EmbedderFactory, EmbeddingService};
+use crate::domain::ChunkMetadata;
+use crate::index::embedder::{EmbedderFactory, EmbeddingService};
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
 
@@ -128,7 +128,7 @@ impl RecordingUi {
     }
 }
 
-impl crate::support::ui::WorkflowUi for RecordingUi {
+impl crate::support::ui::Console for RecordingUi {
     fn info(&self, msg: &str) {
         self.messages.lock().unwrap().push(format!("INFO: {}", msg));
     }
@@ -149,7 +149,7 @@ impl crate::support::ui::WorkflowUi for RecordingUi {
         Ok(responses.get(idx).copied().unwrap_or(true))
     }
 
-    fn progress(&self, _total: u64, _label: &str, _verbose: bool) -> Box<dyn crate::support::progress::ProgressSink> {
+    fn progress(&self, _total: u64, _label: &str) -> Box<dyn crate::support::progress::ProgressSink> {
         self.progress_calls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Box::new(NoopProgress)

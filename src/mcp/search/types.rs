@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::documents::ChunkKind;
+use crate::domain::ChunkKind;
 
 #[derive(Debug, Serialize)]
 pub struct SearchResult {

@@ -1,4 +1,4 @@
-use crate::documents::ChunkKind;
+use crate::domain::ChunkKind;
 use crate::app::index::pipeline::IndexableDocument;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{FileIndexOutcome, FileIndexRequest, FileIndexWorkflow};
 use crate::app::index::runner;
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest, VectorStore};
 use crate::app::index::pipeline::IndexedBatch;
 use crate::app::index::file::FileIndexer;
@@ -107,7 +107,7 @@ impl<'a> FileIndexWorkflow<'a> {
             return Ok(FileIndexOutcome::UpToDate);
         }
 
-        let pb = self.ui.progress(diff.to_index.len() as u64, "Indexing files", request.verbose);
+        let pb = self.ui.progress(diff.to_index.len() as u64, "Indexing files");
         let docs = FileIndexer::prepare_files(&diff.to_index, &request.input_root, self.file_size_limit_mb())?;
         let (batch, dims) = runner::run_indexing_pipeline(
             self.embedder_factory,
@@ -129,8 +129,8 @@ impl<'a> FileIndexWorkflow<'a> {
 mod tests {
     use super::FileIndexOutcome;
     use crate::config::IndexConfig;
-    use crate::documents::ChunkKind;
-    use crate::embedder::EmbeddingService;
+    use crate::domain::ChunkKind;
+    use crate::index::embedder::EmbeddingService;
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, FakeEmbedderFactory, RecordingUi};
@@ -179,7 +179,7 @@ mod tests {
         let req = super::FileIndexRequest {
             input_root: sources,
             rebuild: false,
-            verbose: false,
+            
         };
         let result = wf.run(req).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));
@@ -228,7 +228,7 @@ mod tests {
         let req = super::FileIndexRequest {
             input_root: sources,
             rebuild: false,
-            verbose: false,
+            
         };
         let result = wf.run(req).unwrap();
         assert!(matches!(result, FileIndexOutcome::NeedsRebuild { .. }));
@@ -275,7 +275,7 @@ mod tests {
         let req = super::FileIndexRequest {
             input_root: sources,
             rebuild: false,
-            verbose: false,
+            
         };
         let result = wf.run(req);
         assert!(result.is_err(), "Expected error for corrupted index");
@@ -297,7 +297,7 @@ mod tests {
         let req = super::FileIndexRequest {
             input_root: sources,
             rebuild: false,
-            verbose: false,
+            
         };
         let result = wf.run(req).unwrap();
         if let FileIndexOutcome::Indexed { chunk_count, doc_count, .. } = result {
@@ -328,7 +328,7 @@ mod tests {
         let req = super::FileIndexRequest {
             input_root: sources,
             rebuild: false,
-            verbose: false,
+            
         };
         let result = wf.run(req).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));

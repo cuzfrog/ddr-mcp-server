@@ -1,8 +1,5 @@
-//! Server bootstrap — types and helpers for the axum serve lifecycle.
+use crate::support::ui::{Console, Terminal};
 
-use crate::support::ui::{ConsoleUi, WorkflowUi};
-
-/// Result of preflight that does not require a TCP listener.
 pub(crate) struct PreparedServe {
     pub(crate) router: axum::Router,
 }
@@ -15,13 +12,12 @@ impl std::fmt::Debug for PreparedServe {
     }
 }
 
-/// Return a future that resolves when a shutdown signal (Ctrl+C) is received.
 pub(crate) async fn shutdown_signal() {
     if let Err(e) = tokio::signal::ctrl_c().await {
-        let ui = ConsoleUi;
-        WorkflowUi::info(&ui, &format!("Shutdown signal error: {}", e));
+        let ui = Terminal::new(false);
+        Console::info(&ui, &format!("Shutdown signal error: {}", e));
     } else {
-        let ui = ConsoleUi;
-        WorkflowUi::info(&ui, "Shutting down...");
+        let ui = Terminal::new(false);
+        Console::info(&ui, "Shutting down...");
     }
 }

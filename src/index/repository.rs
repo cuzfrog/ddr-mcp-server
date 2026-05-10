@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::IndexConfig;
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 use crate::index::bm25_schema::Bm25IndexHeader;
 use crate::index::header::IndexHeader;
 use crate::index::merger::IndexMerger;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
+use crate::domain::{ChunkKind, ChunkMetadata, DocumentContext};
 use crate::mcp::search::{
     builder::HybridSearchServiceBuilder, create_fusion, DecayRanker, HybridSearchService,
     ScoreBackend, SearchService,

@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use crate::app::serve::server::{Server, TokioHttpServer};
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
-use crate::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
-use crate::support::ui::{ConsoleUi, WorkflowUi};
+use crate::index::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
+use crate::support::ui::{Terminal, Console};
 
 pub(crate) mod index;
 pub(crate) mod init;
 pub mod serve;
 
 pub struct Application {
-    ui: Box<dyn WorkflowUi>,
+    ui: Box<dyn Console>,
     embedder_factory: Box<dyn EmbedderFactory>,
     index_access: Box<dyn ServeIndexAccess>,
     server: Box<dyn Server>,
@@ -20,7 +20,7 @@ pub struct Application {
 impl Default for Application {
     fn default() -> Self {
         Self::new(
-            Box::new(ConsoleUi),
+            Box::new(Terminal::new(false)),
             Box::new(RealEmbedderFactory),
             Box::new(RealServeIndexAccess),
             Box::new(TokioHttpServer),
@@ -30,7 +30,7 @@ impl Default for Application {
 
 impl Application {
     pub fn new(
-        ui: Box<dyn WorkflowUi>,
+        ui: Box<dyn Console>,
         embedder_factory: Box<dyn EmbedderFactory>,
         index_access: Box<dyn ServeIndexAccess>,
         server: Box<dyn Server>,
@@ -105,12 +105,11 @@ impl Application {
         config: &Config,
         input_root: PathBuf,
         rebuild: bool,
-        verbose: bool,
+        _verbose: bool,
     ) -> anyhow::Result<()> {
         let request = index::file::FileIndexRequest {
             input_root,
             rebuild,
-            verbose,
         };
         let workflow = index::file::FileIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
         let outcome = workflow.run(request)?;

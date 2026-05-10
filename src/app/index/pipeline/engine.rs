@@ -1,7 +1,7 @@
 use crate::app::index::chunking::{self, Chunk, ChunkingConfig};
 use crate::config::IndexConfig;
-use crate::documents::ChunkMetadata;
-use crate::embedder::EmbeddingService;
+use crate::domain::ChunkMetadata;
+use crate::index::embedder::EmbeddingService;
 use crate::app::index::pipeline::types::{Bm25IndexBuilder, IndexableDocument, IndexedBatch};
 use crate::support::progress::ProgressSink;
 

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::config::SearchConfig;
-use crate::embedder::{EmbedderFactory, EmbeddingService};
+use crate::index::embedder::{EmbedderFactory, EmbeddingService};
 use crate::index::MergedIndex;
 use crate::mcp::search::{
     build_bm25_backend, create_fusion, builder::HybridSearchServiceBuilder, DecayRanker,
@@ -79,7 +79,7 @@ impl HybridServiceBuilder {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
+    use crate::domain::{ChunkKind, ChunkMetadata, DocumentContext};
     use crate::index::MergedIndex;
     use crate::index::VectorStore;
     use crate::mcp::search::SearchService;

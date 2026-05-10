@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 use crate::index::VectorStore;
 
 
@@ -98,8 +98,8 @@ pub fn merge_incremental(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::documents::ChunkKind;
-    use crate::documents::DocumentContext;
+    use crate::domain::ChunkKind;
+    use crate::domain::DocumentContext;
     use std::sync::Arc;
 
     fn make_meta(

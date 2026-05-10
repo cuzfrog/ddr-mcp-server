@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 use crate::index::VectorStore;
 use crate::app::index::pipeline::IndexableDocument;
 

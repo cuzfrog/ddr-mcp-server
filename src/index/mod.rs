@@ -31,3 +31,4 @@ pub use stored_metadata::{StoredChunkKind, StoredChunkMetadata};
 pub use repository::{IndexSizeInfo, LoadMergedResult, MergedIndex};
 pub(crate) use repository::{IndexRepository, StoreMergedRequest};
 pub use vector_store::VectorStore;
+pub mod embedder;

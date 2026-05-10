@@ -36,7 +36,7 @@ impl<'a> GitIndexWorkflow<'a> {
         let walk_start = Instant::now();
         let pb1 = self
             .ui
-            .progress(total_new as u64, "Walking commits", request.verbose);
+            .progress(total_new as u64, "Walking commits");
         let new_docs = GitIndexer::index_git_history(
             &request.repo_path,
             git_config,
@@ -57,7 +57,6 @@ impl<'a> GitIndexWorkflow<'a> {
         let pb2 = self.ui.progress(
             total_new_docs as u64,
             "Embedding documents",
-            request.verbose,
         );
 
         let indexable = GitIndexer::prepare_git_documents(&new_docs, &vec![true; new_docs.len()]);

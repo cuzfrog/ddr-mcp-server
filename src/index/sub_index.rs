@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 use crate::index::bm25_schema::{Bm25IndexHeader, BM25_SCHEMA_VERSION};
 use crate::index::bm25_storage;
 use crate::index::header::IndexHeader;

@@ -30,7 +30,7 @@ impl<'a> FileIndexWorkflow<'a> {
         let all_files = crate::app::index::file::FileIndexer::discover_files(&request.input_root, &self.file_glob_patterns())?;
         self.ui.info(&format!("Scanning: {} files found", all_files.len()));
 
-        let pb = self.ui.progress(all_files.len() as u64, "Indexing files", request.verbose);
+        let pb = self.ui.progress(all_files.len() as u64, "Indexing files");
         let docs = crate::app::index::file::FileIndexer::prepare_files(&all_files, &request.input_root, self.file_size_limit_mb())?;
         let (batch, dims) = runner::run_indexing_pipeline(
             self.embedder_factory,
@@ -88,7 +88,7 @@ mod tests {
         let req = super::FileIndexRequest {
             input_root: sources,
             rebuild: true,
-            verbose: false,
+            
         };
         let result = wf.run(req).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));

@@ -17,7 +17,7 @@ impl<'a> GitIndexWorkflow<'a> {
         total_est: usize,
     ) -> anyhow::Result<(Vec<crate::app::index::git::extract::GitDocument>, f64)> {
         let walk_start = Instant::now();
-        let pb_walk = self.ui.progress(total_est as u64, "Walking commits", request.verbose);
+        let pb_walk = self.ui.progress(total_est as u64, "Walking commits");
         let docs = GitIndexer::index_git_history(
             &request.repo_path, git_config, None, true, request.verbose, Some(pb_walk.as_ref()),
         )?;
@@ -29,11 +29,11 @@ impl<'a> GitIndexWorkflow<'a> {
     fn embed_docs(
         &self,
         docs: &[crate::app::index::git::extract::GitDocument],
-        request: &GitIndexRequest,
+        _request: &GitIndexRequest,
     ) -> anyhow::Result<(crate::app::index::pipeline::IndexedBatch, usize, f64)> {
         let total_docs = docs.len();
         let embed_start = Instant::now();
-        let pb_embed = self.ui.progress(total_docs as u64, "Embedding", request.verbose);
+        let pb_embed = self.ui.progress(total_docs as u64, "Embedding");
         let freshness = GitIndexer::compute_freshness(docs);
         let indexable = GitIndexer::prepare_git_documents(docs, &freshness);
         let (batch, dims) = runner::run_indexing_pipeline(

@@ -1,4 +1,4 @@
-use crate::documents::ChunkMetadata;
+use crate::domain::ChunkMetadata;
 
 use super::types::SearchResult;
 
@@ -171,7 +171,7 @@ pub(crate) fn rank_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::documents::{ChunkKind, DocumentContext};
+    use crate::domain::{ChunkKind, DocumentContext};
     use std::sync::Arc;
 
     fn make_meta(

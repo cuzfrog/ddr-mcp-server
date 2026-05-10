@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::embedder::{Embedder, EmbedderFactory};
+use crate::index::embedder::{Embedder, EmbedderFactory};
 use crate::index::{IndexRepository, SourceIndexKind};
-use crate::support::ui::WorkflowUi;
+use crate::support::ui::Console;
 
 pub(crate) mod rebuild;
 pub(crate) mod incremental;
@@ -68,14 +68,14 @@ impl GitIndexOutcome {
 
 pub(crate) struct GitIndexWorkflow<'a> {
     config: &'a Config,
-    ui: &'a dyn WorkflowUi,
+    ui: &'a dyn Console,
     embedder_factory: &'a dyn EmbedderFactory,
 }
 
 impl<'a> GitIndexWorkflow<'a> {
     pub(crate) fn new(
         config: &'a Config,
-        ui: &'a dyn WorkflowUi,
+        ui: &'a dyn Console,
         embedder_factory: &'a dyn EmbedderFactory,
     ) -> Self {
         Self { config, ui, embedder_factory }

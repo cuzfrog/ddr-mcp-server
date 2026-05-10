@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::embedder::EmbedderFactory;
-use crate::support::ui::WorkflowUi;
+use crate::index::embedder::EmbedderFactory;
+use crate::support::ui::Console;
 
 pub(crate) mod rebuild;
 pub(crate) mod incremental;
@@ -18,7 +18,6 @@ pub(crate) use indexer::FileIndexer;
 pub(crate) struct FileIndexRequest {
     pub input_root: PathBuf,
     pub rebuild: bool,
-    pub verbose: bool,
 }
 
 #[derive(Debug)]
@@ -62,14 +61,14 @@ impl FileIndexOutcome {
 
 pub(crate) struct FileIndexWorkflow<'a> {
     config: &'a Config,
-    ui: &'a dyn WorkflowUi,
+    ui: &'a dyn Console,
     embedder_factory: &'a dyn EmbedderFactory,
 }
 
 impl<'a> FileIndexWorkflow<'a> {
     pub(crate) fn new(
         config: &'a Config,
-        ui: &'a dyn WorkflowUi,
+        ui: &'a dyn Console,
         embedder_factory: &'a dyn EmbedderFactory,
     ) -> Self {
         Self { config, ui, embedder_factory }
@@ -100,8 +99,8 @@ mod tests {
     use super::*;
     use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
     use crate::config::IndexConfig;
-    use crate::documents::ChunkKind;
-    use crate::embedder::EmbeddingService;
+    use crate::domain::ChunkKind;
+    use crate::index::embedder::EmbeddingService;
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
 
@@ -148,7 +147,6 @@ mod tests {
         let request = FileIndexRequest {
             input_root: persist.clone(),
             rebuild: true,
-            verbose: false,
         };
         let result = workflow.run(request).unwrap();
         assert!(matches!(result, FileIndexOutcome::Aborted));
@@ -173,7 +171,6 @@ mod tests {
         let request = FileIndexRequest {
             input_root: sources,
             rebuild: true,
-            verbose: false,
         };
         let result = workflow.run(request).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));

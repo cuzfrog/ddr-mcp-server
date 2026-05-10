@@ -4,9 +4,8 @@
 //! for the `docent` binary. It is not intended for external consumption.
 
 pub mod app;
-pub mod documents;
 pub mod config;
-pub mod embedder;
+pub mod domain;
 pub mod index;
 pub(crate) mod mcp;
 pub mod support;

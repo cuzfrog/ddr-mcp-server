@@ -9,21 +9,21 @@ use crate::app::serve::bootstrap::PreparedServe;
 use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::ServeIndexAccess;
 use crate::config::Config;
-use crate::embedder::EmbedderFactory;
+use crate::index::embedder::EmbedderFactory;
 use crate::mcp::DocentMcpServer;
 use crate::mcp::SearchExecutor;
-use crate::support::ui::WorkflowUi;
+use crate::support::ui::Console;
 
 #[async_trait]
 pub trait Server: Send + Sync {
-    async fn serve(&self, router: Router, port: u16, ui: &dyn WorkflowUi) -> anyhow::Result<()>;
+    async fn serve(&self, router: Router, port: u16, ui: &dyn Console) -> anyhow::Result<()>;
 }
 
 pub struct TokioHttpServer;
 
 #[async_trait]
 impl Server for TokioHttpServer {
-    async fn serve(&self, router: Router, port: u16, ui: &dyn WorkflowUi) -> anyhow::Result<()> {
+    async fn serve(&self, router: Router, port: u16, ui: &dyn Console) -> anyhow::Result<()> {
         let addr = format!("127.0.0.1:{}", port);
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
@@ -50,7 +50,7 @@ pub(crate) fn prepare_serve(
     index_access: &dyn ServeIndexAccess,
     embedder_factory: &dyn EmbedderFactory,
     config: &Config,
-    ui: &dyn WorkflowUi,
+    ui: &dyn Console,
 ) -> anyhow::Result<PreparedServe> {
     let persist_path = config.persist_path_buf();
 

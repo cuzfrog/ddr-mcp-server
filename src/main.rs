@@ -3,8 +3,8 @@ use docent_mcp::app::Application;
 use docent_mcp::app::serve::server::TokioHttpServer;
 use docent_mcp::app::serve::RealServeIndexAccess;
 use docent_mcp::config::Config;
-use docent_mcp::embedder::RealEmbedderFactory;
-use docent_mcp::support::ui::ConsoleUi;
+use docent_mcp::index::embedder::RealEmbedderFactory;
+use docent_mcp::support::ui::Terminal;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -44,35 +44,38 @@ struct ServeArgs {
     config: PathBuf,
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    let app = Application::new(
-        Box::new(ConsoleUi),
+fn make_app(verbose: bool) -> Application {
+    Application::new(
+        Box::new(Terminal::new(verbose)),
         Box::new(RealEmbedderFactory),
         Box::new(RealServeIndexAccess),
         Box::new(TokioHttpServer),
-    );
+    )
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
     match cli.command {
         Commands::IndexFile(args) => {
             let mut config = Config::load(&args.config)?;
             config.git = None;
-            app.run_index(&config, args.path, args.rebuild, args.verbose)?;
+            make_app(args.verbose).run_index(&config, args.path, args.rebuild, args.verbose)?;
         }
         Commands::IndexGit(args) => {
             let mut config = Config::load(&args.config)?;
             config.file = None;
-            app.run_index(&config, args.path, args.rebuild, args.verbose)?;
+            make_app(args.verbose).run_index(&config, args.path, args.rebuild, args.verbose)?;
         }
         Commands::Serve(args) => {
             let config = Config::load(&args.config)?;
-            app.run_serve(&config).await?;
+            make_app(false).run_serve(&config).await?;
         }
-        Commands::ListModels => app.list_models(),
-        Commands::Init => app.run_init()?,
+        Commands::ListModels => make_app(false).list_models(),
+        Commands::Init => make_app(false).run_init()?,
         Commands::Index(args) => {
             let config = Config::load(&args.config)?;
-            app.run_index(&config, args.path, args.rebuild, args.verbose)?;
+            make_app(args.verbose).run_index(&config, args.path, args.rebuild, args.verbose)?;
         }
     }
     Ok(())
