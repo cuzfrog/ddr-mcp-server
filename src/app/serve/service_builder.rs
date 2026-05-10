@@ -52,7 +52,7 @@ impl HybridServiceBuilder {
             &search_config.fusion_strategy,
             search_config.rrf_k,
             search_config.semantic_weight,
-        );
+        )?;
 
         let ranker = Arc::new(DecayRanker::new(
             search_config.same_src_score_decay,

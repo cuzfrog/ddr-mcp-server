@@ -145,17 +145,20 @@ impl ScoreFusion for CombMnzFusion {
 // ---------------------------------------------------------------------------
 
 /// Create a `ScoreFusion` from the strategy name and parameters.
+///
+/// # Errors
+/// Returns an error if `strategy` is not one of the supported values.
 pub(crate) fn create_fusion(
     strategy: &str,
     rrf_k: f32,
     semantic_weight: f32,
-) -> Arc<dyn ScoreFusion> {
+) -> anyhow::Result<Arc<dyn ScoreFusion>> {
     match strategy {
-        "rrf" => Arc::new(RrfFusion { k: rrf_k }),
-        "weighted_sum" => Arc::new(WeightedSumFusion { semantic_weight }),
-        "comb_sum" => Arc::new(CombSumFusion),
-        "comb_mnz" => Arc::new(CombMnzFusion),
-        other => panic!("Unknown fusion strategy: {}", other), // validated at config load
+        "rrf" => Ok(Arc::new(RrfFusion { k: rrf_k })),
+        "weighted_sum" => Ok(Arc::new(WeightedSumFusion { semantic_weight })),
+        "comb_sum" => Ok(Arc::new(CombSumFusion)),
+        "comb_mnz" => Ok(Arc::new(CombMnzFusion)),
+        other => anyhow::bail!("Unknown fusion strategy: {}", other),
     }
 }
 
@@ -221,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_create_fusion_default_rrf() {
-        let f = create_fusion("rrf", 60.0, 0.7);
+        let f = create_fusion("rrf", 60.0, 0.7).unwrap();
         let result = f.fuse(&[0.9], &[0.1]);
         assert_eq!(result.len(), 1);
     }
