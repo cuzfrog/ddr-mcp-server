@@ -159,6 +159,8 @@ impl ScoreBackend for ZeroScoreBackend {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
+    use crate::index::MergedIndex;
     use crate::index::VectorStore;
     use crate::tests::fixtures::FakeEmbedder;
 
@@ -216,5 +218,88 @@ mod tests {
             &config.index,
         );
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_bm25_rebuild_from_metadata() -> anyhow::Result<()> {
+        let tmp = std::env::temp_dir().join("docent_bm25_rebuild_test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp.join("file"))?;
+
+        let metadata = vec![
+            ChunkMetadata {
+                doc_ctx: DocumentContext {
+                    source_path: Arc::from("doc1.md"),
+                    source_revision: Arc::from("hash1"),
+                    title: Arc::from(""),
+                    modified_at: None,
+                    kind: ChunkKind::File,
+                },
+                chunk_text: "The quick brown fox jumps over the lazy dog.".to_string(),
+                section_heading: None,
+                chunk_index: 0,
+                line_start: 0,
+                line_end: 0,
+                is_fresh: None,
+            },
+            ChunkMetadata {
+                doc_ctx: DocumentContext {
+                    source_path: Arc::from("doc2.md"),
+                    source_revision: Arc::from("hash2"),
+                    title: Arc::from(""),
+                    modified_at: None,
+                    kind: ChunkKind::File,
+                },
+                chunk_text: "Apples are delicious fruits.".to_string(),
+                section_heading: None,
+                chunk_index: 0,
+                line_start: 0,
+                line_end: 0,
+                is_fresh: None,
+            },
+        ];
+
+        let merged = MergedIndex {
+            vectors: VectorStore::from_vec_vec(vec![
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0, 0.0],
+            ])?,
+            metadata,
+            bm25_embeddings: None,
+            bm25_header: None,
+            built_at: "now".to_string(),
+        };
+
+        let embedder: Arc<Mutex<dyn EmbeddingService>> =
+            Arc::new(Mutex::new(FakeEmbedder::new()));
+        let config = Config::default();
+
+        let search_service = build_hybrid_search_service(
+            merged,
+            embedder,
+            &config.search,
+            &tmp,
+            &config.index,
+        )?;
+
+        // The service should have a real BM25 backend, not a ZeroScoreBackend
+        // We verify by running a search — BM25 should produce non-zero scores
+        let results = search_service.search("apples", 5).await?;
+        let has_bm25_scores = results.iter().any(|r| r.bm25_score > 0.0);
+        assert!(
+            has_bm25_scores,
+            "BM25 rebuild should produce non-zero scores for matching terms"
+        );
+
+        // Verify BM25 was written to disk
+        assert!(tmp.join("file").join("bm25").join("header.json").exists());
+        assert!(tmp
+            .join("file")
+            .join("bm25")
+            .join("embeddings.json")
+            .exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+        Ok(())
     }
 }

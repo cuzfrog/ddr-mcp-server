@@ -582,4 +582,86 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&persist);
     }
+
+    #[test]
+    fn test_incremental_index_preserves_bm25_data() {
+        let persist = make_temp_dir("file_bm25_incremental");
+        let config = file_config(&persist);
+        let sources = persist.join("src");
+        std::fs::create_dir_all(&sources).unwrap();
+
+        // Phase 1: Full index of initial files
+        write_file(&sources, "doc1.md", "# Doc 1\nThe quick brown fox jumps over the lazy dog.");
+        write_file(&sources, "doc2.md", "# Doc 2\nThe fox is a clever animal.");
+
+        {
+            let request = FileIndexRequest {
+                input_root: sources.clone(),
+                rebuild: true,
+                verbose: false,
+            };
+            let ui = RecordingUi::always_confirm();
+            let factory = FakeEmbedderFactory;
+            FileIndexWorkflow::new(&config, &ui, &factory).run(request).unwrap();
+        }
+
+        // Verify BM25 data exists after full index
+        let bm25_dir = persist.join("file").join("bm25");
+        assert!(
+            bm25_dir.join("header.json").exists(),
+            "BM25 header should exist after full index"
+        );
+        assert!(
+            bm25_dir.join("embeddings.json").exists(),
+            "BM25 embeddings should exist after full index"
+        );
+        let (initial_header, initial_embeddings) =
+            crate::index::read_bm25_index(&bm25_dir).unwrap();
+        let initial_chunk_count = initial_header.chunk_count;
+        assert!(
+            initial_chunk_count > 0,
+            "BM25 should have chunks after full index"
+        );
+        assert_eq!(initial_embeddings.len(), initial_chunk_count);
+
+        // Phase 2: Incremental update with a new document
+        write_file(&sources, "doc3.md", "# Doc 3\nApples are red or green fruits.");
+
+        {
+            let request = FileIndexRequest {
+                input_root: sources,
+                rebuild: false,
+                verbose: false,
+            };
+            let ui = RecordingUi::always_confirm();
+            let factory = FakeEmbedderFactory;
+            FileIndexWorkflow::new(&config, &ui, &factory).run(request).unwrap();
+        }
+
+        // Verify BM25 data still exists with updated chunk count
+        assert!(
+            bm25_dir.join("header.json").exists(),
+            "BM25 header should still exist after incremental update"
+        );
+        let (updated_header, updated_embeddings) =
+            crate::index::read_bm25_index(&bm25_dir).unwrap();
+        assert!(
+            updated_header.chunk_count > initial_chunk_count,
+            "BM25 chunk count should increase after adding docs: {} > {}",
+            updated_header.chunk_count,
+            initial_chunk_count
+        );
+        assert_eq!(updated_embeddings.len(), updated_header.chunk_count);
+
+        // Verify each embedding is non-empty (has tokens)
+        for (i, emb) in updated_embeddings.iter().enumerate() {
+            assert!(
+                !emb.0.is_empty(),
+                "BM25 embedding {} should have at least one token",
+                i
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&persist);
+    }
 }
