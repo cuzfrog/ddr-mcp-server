@@ -27,6 +27,32 @@ pub(crate) enum FileIndexOutcome {
     },
 }
 
+impl FileIndexOutcome {
+    /// Format this outcome into one or more user-facing messages.
+    pub(crate) fn format_for_ui(&self) -> Vec<(/* level */ &'static str, String)> {
+        match self {
+            FileIndexOutcome::Aborted => vec![("info", "Aborted.".to_string())],
+            FileIndexOutcome::UpToDate => {
+                vec![("info", "No changes detected. Index is up to date.".to_string())]
+            }
+            FileIndexOutcome::Indexed { rebuilt, chunk_count, doc_count } => {
+                if *rebuilt {
+                    vec![("info", format!(
+                        "File index written: {} chunks from {} docs", chunk_count, doc_count
+                    ))]
+                } else {
+                    vec![("info", format!(
+                        "File index updated: {} chunks from {} docs", chunk_count, doc_count
+                    ))]
+                }
+            }
+            FileIndexOutcome::NeedsRebuild { reason } => {
+                vec![("warn", reason.clone())]
+            }
+        }
+    }
+}
+
 pub(crate) struct FileIndexWorkflow<'a> {
     config: &'a Config,
     ui: &'a dyn WorkflowUi,

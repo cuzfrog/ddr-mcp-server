@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use rmcp::transport::streamable_http_server::{
@@ -15,6 +15,7 @@ use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
 use crate::interfaces::mcp::DocentMcpServer;
 use crate::interfaces::search_tool::SearchExecutor;
+use crate::support::fs;
 use crate::support::ui::{ConsoleUi, WorkflowUi};
 
 pub struct Application {
@@ -109,7 +110,7 @@ impl Application {
     ) -> anyhow::Result<()> {
         let config = Config::load(config_path)?;
         let path = file.unwrap_or_else(|| PathBuf::from("."));
-        let input_root = resolve_input_root(&path)?;
+        let input_root = fs::resolve_input_root(&path)?;
         self.run_file_index_workflow(&config, input_root, rebuild, verbose)
     }
 
@@ -122,7 +123,7 @@ impl Application {
     ) -> anyhow::Result<()> {
         let config = Config::load(config_path)?;
         let path = file.unwrap_or_else(|| PathBuf::from("."));
-        let repo_path = resolve_repo_path(&path)?;
+        let repo_path = fs::resolve_repo_root(&path)?;
         self.run_git_index_workflow(&config, repo_path, rebuild, verbose)
     }
 
@@ -218,27 +219,10 @@ impl Application {
         };
         let workflow = workflows::file_index::FileIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
         let outcome = workflow.run(request)?;
-
-        match outcome {
-            workflows::file_index::FileIndexOutcome::Aborted => {
-                self.ui.info("Aborted.");
-            }
-            workflows::file_index::FileIndexOutcome::UpToDate => {
-                self.ui.info("No changes detected. Index is up to date.");
-            }
-            workflows::file_index::FileIndexOutcome::Indexed { rebuilt, chunk_count, doc_count } => {
-                if rebuilt {
-                    self.ui.info(&format!(
-                        "File index written: {} chunks from {} docs", chunk_count, doc_count
-                    ));
-                } else {
-                    self.ui.info(&format!(
-                        "File index updated: {} chunks from {} docs", chunk_count, doc_count
-                    ));
-                }
-            }
-            workflows::file_index::FileIndexOutcome::NeedsRebuild { reason } => {
-                self.ui.warn(&reason);
+        for (level, msg) in outcome.format_for_ui() {
+            match level {
+                "warn" => self.ui.warn(&msg),
+                _ => self.ui.info(&msg),
             }
         }
         Ok(())
@@ -258,102 +242,20 @@ impl Application {
         };
         let workflow = workflows::git_index::GitIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
         let outcome = workflow.run(request)?;
-
-        match outcome {
-            workflows::git_index::GitIndexOutcome::Aborted => {
-                self.ui.info("Aborted.");
-            }
-            workflows::git_index::GitIndexOutcome::UpToDate => {
-                self.ui.info("Git index is up to date.");
-            }
-            workflows::git_index::GitIndexOutcome::NoDocuments => {
-                self.ui.info("No git documents found.");
-            }
-            workflows::git_index::GitIndexOutcome::Indexed { rebuilt, chunk_count, doc_count, new_commit_count, walk_secs, embed_secs } => {
-                if rebuilt {
-                    self.ui.info(&format!(
-                        "Git index written: {} chunks from {} docs (walk: {:.1}s, embed: {:.1}s)",
-                        chunk_count, doc_count, walk_secs, embed_secs
-                    ));
-                } else {
-                    self.ui.info(&format!(
-                        "Git index updated: {} chunks from {} docs ({} new commits, walk: {:.1}s, embed: {:.1}s)",
-                        chunk_count, doc_count, new_commit_count, walk_secs, embed_secs
-                    ));
-                }
+        for (level, msg) in outcome.format_for_ui() {
+            match level {
+                "warn" => self.ui.warn(&msg),
+                _ => self.ui.info(&msg),
             }
         }
         Ok(())
     }
 }
 
-// ---------------------------------------------------------------------------
-// Private helpers
-// ---------------------------------------------------------------------------
-
-fn resolve_input_root(path: &Path) -> anyhow::Result<PathBuf> {
-    let canonical = path.canonicalize()?;
-    if canonical.is_file() {
-        canonical
-            .parent()
-            .map(|p| p.to_path_buf())
-            .ok_or_else(|| anyhow::anyhow!("Cannot determine parent of {}", canonical.display()))
-    } else {
-        Ok(canonical)
-    }
-}
-
-fn resolve_repo_path(path: &Path) -> anyhow::Result<PathBuf> {
-    path.canonicalize()
-        .map_err(|_| anyhow::anyhow!("path '{}' does not exist", path.display()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tests::fixtures::make_temp_dir;
-
-    #[test]
-    fn resolve_input_root_with_file_returns_parent() {
-        let base = make_temp_dir("app_file_parent");
-        let file_path = base.join("test.md");
-        std::fs::write(&file_path, "content").unwrap();
-        let root = resolve_input_root(&file_path).unwrap();
-        assert_eq!(root, base.canonicalize().unwrap());
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn resolve_input_root_with_directory_returns_self() {
-        let base = make_temp_dir("app_dir_self");
-        let canonical_base = base.canonicalize().unwrap();
-        let root = resolve_input_root(&base).unwrap();
-        assert_eq!(root, canonical_base);
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn resolve_input_root_nonexistent_path_returns_error() {
-        let result = resolve_input_root(Path::new("/nonexistent/path/for/sure"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn resolve_repo_path_existing_path_succeeds() {
-        let base = make_temp_dir("app_repo_exists");
-        let canonical = base.canonicalize().unwrap();
-        let result = resolve_repo_path(&base).unwrap();
-        assert_eq!(result, canonical);
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn resolve_repo_path_nonexistent_path_returns_error() {
-        let result = resolve_repo_path(Path::new("/nonexistent/repo/path"));
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("does not exist"));
-    }
 
     #[test]
     fn format_supported_models_returns_expected_strings() {
