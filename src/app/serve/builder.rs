@@ -106,8 +106,11 @@ pub(crate) fn build_hybrid_search_service(
         search_config.semantic_weight,
     );
 
-    // Build ranker
-    let ranker = Arc::new(DecayRanker::new(search_config.same_src_score_decay));
+    // Build ranker (file_hint_boost is applied inside the ranker)
+    let ranker = Arc::new(DecayRanker::new(
+        search_config.same_src_score_decay,
+        search_config.file_hint_boost,
+    ));
 
     // Build hybrid service
     let search_service = HybridSearchService::new(
@@ -117,7 +120,6 @@ pub(crate) fn build_hybrid_search_service(
         ranker,
         Arc::new(merged.metadata),
         merged.built_at,
-        search_config.file_hint_boost,
     );
 
     Ok(search_service)

@@ -14,7 +14,7 @@ pub const SCHEMA_VERSION: u32 = 7;
 /// O(1) slice access via `get(i) -> &[f32]`. Improves cache locality
 /// during similarity search compared to `Vec<Vec<f32>>`.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct VectorStore {
+pub struct VectorStore {
     pub(crate) data: Vec<f32>,
     pub(crate) dims: usize,
     pub(crate) count: usize,
@@ -97,95 +97,9 @@ impl VectorStore {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Approximate Nearest Neighbor index (HNSW) for fast large-scale search
-// ---------------------------------------------------------------------------
-
-/// A single vector point usable with `instant_distance::Hnsw`.
-#[allow(dead_code)]
-#[derive(Clone)]
-struct AnnPoint(Vec<f32>);
-
-impl instant_distance::Point for AnnPoint {
-    fn distance(&self, other: &Self) -> f32 {
-        let dot: f32 = self.0.iter().zip(&other.0).map(|(a, b)| a * b).sum();
-        let na: f32 = self.0.iter().map(|x| x * x).sum();
-        let nb: f32 = other.0.iter().map(|x| x * x).sum();
-        let na_sqrt = na.sqrt();
-        let nb_sqrt = nb.sqrt();
-        if na_sqrt == 0.0 || nb_sqrt == 0.0 {
-            return 1.0;
-        }
-        // Cosine distance: 1 − cosine_similarity
-        1.0 - (dot / (na_sqrt * nb_sqrt))
-    }
-}
-
-/// HNSW-based approximate nearest neighbor index.
-///
-/// Built from a [`VectorStore`] during index load (not persisted separately).
-/// Only constructed for indexes with ≥ 5 000 chunks; smaller indexes use
-/// brute-force search which is faster.
-#[allow(dead_code)]
-pub(crate) struct AnnIndex {
-    hnsw: instant_distance::Hnsw<AnnPoint>,
-    /// Maps HNSW-internal `PointId` → original index in the `VectorStore`.
-    inverse: Vec<usize>,
-}
-
-impl std::fmt::Debug for AnnIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AnnIndex")
-            .field("inverse_len", &self.inverse.len())
-            .finish()
-    }
-}
-
-#[allow(dead_code)]
-impl AnnIndex {
-    /// Build an ANN index from `vectors`.
-    ///
-    /// Returns `Ok(None)` when the vector count is below the threshold where
-    /// ANN is beneficial (currently 5 000).
-    pub fn build(vectors: &VectorStore) -> anyhow::Result<Option<Self>> {
-        if vectors.len() < 5000 {
-            return Ok(None);
-        }
-
-        let points: Vec<AnnPoint> = (0..vectors.len())
-            .map(|i| AnnPoint(vectors.get(i).to_vec()))
-            .collect();
-
-        let builder = instant_distance::Hnsw::<AnnPoint>::builder();
-        let (hnsw, ids) = builder.build_hnsw(points);
-
-        // `ids[original_idx] = shuffled_point_id` → build inverse mapping
-        let mut inverse = vec![0usize; ids.len()];
-        for (original, &shuffled) in ids.iter().enumerate() {
-            inverse[shuffled.into_inner() as usize] = original;
-        }
-
-        Ok(Some(Self { hnsw, inverse }))
-    }
-
-    /// Search for the `k` nearest neighbors of `query_vector`.
-    ///
-    /// Returns the original `VectorStore` indices so the caller can look up
-    /// metadata and re-rank with exact cosine similarity.
-    pub fn search(&self, query_vector: &[f32], k: usize) -> Vec<usize> {
-        let query_point = AnnPoint(query_vector.to_vec());
-        let mut search = instant_distance::Search::default();
-        self.hnsw
-            .search(&query_point, &mut search)
-            .take(k)
-            .map(|item| self.inverse[item.pid.into_inner() as usize])
-            .collect()
-    }
-}
-
 /// In-memory representation of an index loaded from disk.
 #[derive(Debug)]
-pub(crate) struct StoredIndex {
+pub struct StoredIndex {
     pub header: IndexHeader,
     pub vectors: VectorStore,
     pub metadata: Vec<StoredChunkMetadata>,
@@ -195,14 +109,14 @@ pub(crate) struct StoredIndex {
 /// Serialized identically to the runtime `ChunkKind`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum StoredChunkKind {
+pub enum StoredChunkKind {
     File,
     Git,
 }
 
 /// Per-chunk source provenance written to `metadata.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct StoredChunkMetadata {
+pub struct StoredChunkMetadata {
     pub source_path: String,
     pub source_revision: String,
     pub title: String,
