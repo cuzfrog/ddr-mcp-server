@@ -1,7 +1,7 @@
 mod types;
 mod ranking;
 mod fusion;
-pub mod backend;
+pub(crate) mod backend;
 mod orchestrator;
 pub(crate) use ranking::DecayRanker;
 pub(crate) use fusion::create_fusion;

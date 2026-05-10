@@ -1,16 +1,16 @@
 pub mod app;
 pub mod cli;
 
-pub mod documents;
-pub mod chunking;
-pub mod config;
-pub mod embedder;
-pub mod index;
+pub(crate) mod documents;
+pub(crate) mod chunking;
+pub(crate) mod config;
+pub(crate) mod embedder;
+pub(crate) mod index;
 pub(crate) mod sources;
-pub mod indexing;
+pub(crate) mod indexing;
 pub(crate) mod interfaces;
-pub mod search;
-pub mod support;
+pub(crate) mod search;
+pub(crate) mod support;
 pub(crate) mod ui;
 
 #[cfg(test)]
