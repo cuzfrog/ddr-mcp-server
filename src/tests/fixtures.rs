@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use crate::app::index::chunking::TokenCounter;
 use crate::config::IndexConfig;
 use crate::domain::ChunkMetadata;
-use crate::index::embedder::EmbeddingService;
-use crate::index::embedder_factory::EmbedderFactory;
+use crate::index::embedder::Embedder;
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
 
@@ -53,7 +52,7 @@ impl FakeEmbedder {
     }
 }
 
-impl EmbeddingService for FakeEmbedder {
+impl Embedder for FakeEmbedder {
     fn embed(&mut self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         Ok(texts
             .iter()
@@ -72,18 +71,6 @@ impl EmbeddingService for FakeEmbedder {
 
     fn token_counter(&self) -> Box<dyn TokenCounter> {
         Box::new(crate::app::index::chunking::WhitespaceTokenCounter)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// FakeEmbedderFactory — returns FakeEmbedder for tests
-// ---------------------------------------------------------------------------
-
-pub(crate) struct FakeEmbedderFactory;
-
-impl EmbedderFactory for FakeEmbedderFactory {
-    fn create(&self, _model: &str) -> anyhow::Result<Box<dyn EmbeddingService>> {
-        Ok(Box::new(FakeEmbedder::new()))
     }
 }
 

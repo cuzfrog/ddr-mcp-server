@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::index::embedder::EmbeddingService;
+use crate::index::embedder::Embedder;
 use crate::index::VectorStore;
 
 // ---------------------------------------------------------------------------
@@ -18,13 +18,13 @@ pub trait ScoreBackend: Send + Sync {
 // ---------------------------------------------------------------------------
 
 pub struct VectorScoreBackend {
-    embedder: Arc<Mutex<dyn EmbeddingService>>,
+    embedder: Arc<Mutex<dyn Embedder>>,
     vectors: Arc<VectorStore>,
 }
 
 impl VectorScoreBackend {
     pub fn new(
-        embedder: Arc<Mutex<dyn EmbeddingService>>,
+        embedder: Arc<Mutex<dyn Embedder>>,
         vectors: Arc<VectorStore>,
     ) -> Self {
         Self { embedder, vectors }
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_vector_backend_scores_descending() {
-        let embedder: Arc<Mutex<dyn EmbeddingService>> =
+        let embedder: Arc<Mutex<dyn Embedder>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
         let vectors = Arc::new(
             VectorStore::from_vec_vec(vec![
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_vector_backend_empty_vectors() {
-        let embedder: Arc<Mutex<dyn EmbeddingService>> =
+        let embedder: Arc<Mutex<dyn Embedder>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
         let vectors = Arc::new(VectorStore::from_vec_vec(vec![]).unwrap());
         let backend = VectorScoreBackend::new(embedder, vectors);

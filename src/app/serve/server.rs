@@ -8,7 +8,6 @@ use rmcp::transport::streamable_http_server::{
 use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::ServeIndexAccess;
 use crate::config::Config;
-use crate::index::embedder_factory::EmbedderFactory;
 use crate::mcp::DocentMcpServer;
 use crate::mcp::SearchExecutor;
 use crate::support::ui::Console;
@@ -18,8 +17,7 @@ pub trait Server: Send + Sync {
     async fn serve(
         &self,
         config: &Config,
-        embedder_factory: &dyn EmbedderFactory,
-        ui: &dyn Console,
+        console: &dyn Console,
     ) -> anyhow::Result<()>;
 }
 
@@ -36,10 +34,9 @@ impl Server for TokioHttpServer {
     async fn serve(
         &self,
         config: &Config,
-        embedder_factory: &dyn EmbedderFactory,
-        ui: &dyn Console,
+        console: &dyn Console,
     ) -> anyhow::Result<()> {
-        let router = prepare_router(&*self.index_access, embedder_factory, config, ui)?;
+        let router = prepare_router(&*self.index_access, config, console)?;
 
         let addr = format!("127.0.0.1:{}", config.server.port);
         let listener = tokio::net::TcpListener::bind(&addr)
@@ -49,7 +46,7 @@ impl Server for TokioHttpServer {
             .local_addr()
             .context("Failed to get local address")?;
 
-        ui.info(&format!(
+        console.info(&format!(
             "docent server listening on http://{} (open in browser for web UI)",
             local_addr,
         ));
@@ -65,25 +62,24 @@ impl Server for TokioHttpServer {
 
 fn prepare_router(
     index_access: &dyn ServeIndexAccess,
-    embedder_factory: &dyn EmbedderFactory,
     config: &Config,
-    ui: &dyn Console,
+    console: &dyn Console,
 ) -> anyhow::Result<Router> {
     let persist_path = config.persist_path_buf();
 
     if let Some(info) = index_access.check_size(&persist_path, config.index.max_size_mb)? {
-        ui.warn(&format!(
+        console.warn(&format!(
             "The total index is {:.1} MB, which exceeds the configured limit of {} MB.",
             info.total_bytes as f64 / (1024.0 * 1024.0),
             config.index.max_size_mb
         ));
         if persist_path.join("file").exists() {
-            ui.warn(&format!("  file/ subdirectory: {:.1} MB", info.file_bytes as f64 / (1024.0 * 1024.0)));
+            console.warn(&format!("  file/ subdirectory: {:.1} MB", info.file_bytes as f64 / (1024.0 * 1024.0)));
         }
         if persist_path.join("git").exists() {
-            ui.warn(&format!("  git/ subdirectory:  {:.1} MB", info.git_bytes as f64 / (1024.0 * 1024.0)));
+            console.warn(&format!("  git/ subdirectory:  {:.1} MB", info.git_bytes as f64 / (1024.0 * 1024.0)));
         }
-        if !ui.confirm("Continue?")? {
+        if !console.confirm("Continue?")? {
             anyhow::bail!("Aborted by user.");
         }
     }
@@ -92,12 +88,12 @@ fn prepare_router(
         .load_merged(&persist_path, &config.index, config.search.bm25.k1, config.search.bm25.b)
         .map_err(|e| anyhow::anyhow!("Failed to load merged index: {}", e))?;
     for notice in &result.notices {
-        ui.info(notice);
+        console.info(notice);
     }
     let merged = result.merged;
 
     let builder = HybridServiceBuilder;
-    let embedder = builder.build_embedder(embedder_factory, &config.index.embedding_model)?;
+    let embedder = builder.build_embedder(&config.index.embedding_model)?;
     let search_service = std::sync::Arc::new(builder.build(
         merged,
         embedder,
@@ -126,14 +122,13 @@ mod tests {
     use crate::app::serve::server::prepare_router;
     use crate::app::serve::ServeIndexAccess;
     use crate::config::{Config, IndexConfig};
-    use crate::index::embedder::EmbeddingService;
-    use crate::index::embedder_factory::EmbedderFactory;
+    use crate::index::embedder::Embedder;
     use crate::index::{
         IndexRepository, IndexSizeInfo, LoadMergedResult, MergedIndex, SourceIndexKind,
     };
     use crate::index::VectorStore;
     use crate::tests::fixtures::{
-        make_temp_dir, FakeEmbedder, FakeEmbedderFactory, RecordingUi,
+        make_temp_dir, FakeEmbedder, RecordingUi,
     };
 
     struct FakeServeIndexAccess {
@@ -195,14 +190,6 @@ mod tests {
                     notices: vec![],
                 })
             }
-        }
-    }
-
-    struct FailingEmbedderFactory;
-
-    impl EmbedderFactory for FailingEmbedderFactory {
-        fn create(&self, _model: &str) -> anyhow::Result<Box<dyn EmbeddingService>> {
-            Err(anyhow::anyhow!("mock embedder init error"))
         }
     }
 
@@ -274,10 +261,9 @@ mod tests {
         let persist = make_temp_dir("serve_oversized_abort");
         let config = serve_config(&persist);
         let index_access = FakeServeIndexAccess::new().with_oversized();
-        let ui = RecordingUi::never_confirm();
-        let factory = FakeEmbedderFactory;
+        let console = RecordingUi::never_confirm();
 
-        let result = prepare_router(&index_access, &factory, &config, &ui);
+        let result = prepare_router(&index_access, &config, &console);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Aborted"), "Expected abort error, got: {}", err);
@@ -293,10 +279,9 @@ mod tests {
         let mut oversized_config = config.clone();
         oversized_config.index.max_size_mb = 1;
         let index_access = FakeServeIndexAccess::new().with_oversized();
-        let ui = RecordingUi::always_confirm();
-        let factory = FakeEmbedderFactory;
+        let console = RecordingUi::always_confirm();
 
-        let result = prepare_router(&index_access, &factory, &oversized_config, &ui);
+        let result = prepare_router(&index_access, &oversized_config, &console);
         assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);
@@ -307,10 +292,9 @@ mod tests {
         let persist = make_temp_dir("serve_merge_error");
         let config = serve_config(&persist);
         let index_access = FakeServeIndexAccess::new().with_load_error();
-        let ui = RecordingUi::always_confirm();
-        let factory = FakeEmbedderFactory;
+        let console = RecordingUi::always_confirm();
 
-        let result = prepare_router(&index_access, &factory, &config, &ui);
+        let result = prepare_router(&index_access, &config, &console);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let display = err.to_string();
@@ -330,42 +314,14 @@ mod tests {
     }
 
     #[test]
-    fn embedder_init_error_propagates() {
-        let persist = make_temp_dir("serve_embedder_error");
-        let config = serve_config(&persist);
-        let index_access = FakeServeIndexAccess::new();
-        let ui = RecordingUi::always_confirm();
-        let factory = FailingEmbedderFactory;
-
-        let result = prepare_router(&index_access, &factory, &config, &ui);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let display = err.to_string();
-        assert!(
-            display.contains("Failed to initialize embedding model"),
-            "Expected context message about embedding model, got: {}",
-            display
-        );
-        let cause_found = err.chain().any(|e| e.to_string().contains("mock embedder init error"));
-        assert!(
-            cause_found,
-            "Expected mock embedder init error in chain, got: {:#}",
-            err
-        );
-
-        let _ = std::fs::remove_dir_all(&persist);
-    }
-
-    #[test]
     fn bootstrap_succeeds_with_fake_dependencies() {
         let persist = make_temp_dir("serve_bootstrap");
         create_minimal_file_index(&persist);
         let config = serve_config(&persist);
         let index_access = FakeServeIndexAccess::new();
-        let ui = RecordingUi::always_confirm();
-        let factory = FakeEmbedderFactory;
+        let console = RecordingUi::always_confirm();
 
-        let result = prepare_router(&index_access, &factory, &config, &ui);
+        let result = prepare_router(&index_access, &config, &console);
         assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);

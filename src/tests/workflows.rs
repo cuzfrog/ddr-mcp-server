@@ -1,6 +1,6 @@
 use crate::config::IndexConfig;
 use crate::domain::{ChunkKind, ChunkMetadata};
-use crate::index::embedder::EmbeddingService;
+use crate::index::embedder::Embedder;
 use crate::index::{IndexRepository, SourceIndexKind, SCHEMA_VERSION};
 use crate::app::index::pipeline::{IndexingPipeline, IndexableDocument};
 use crate::tests::fixtures::{make_temp_dir, read_index_at, FakeEmbedder};

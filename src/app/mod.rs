@@ -1,38 +1,46 @@
 use std::path::PathBuf;
 
+use crate::app::index::file::{FileIndexer, FileIndexerImpl};
+use crate::app::index::git::{GitIndexer, GitIndexerImpl};
 use crate::app::serve::server::{Server, create_server};
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::index::embedder::list_supported_models;
-use crate::index::embedder_factory::{EmbedderFactory, create_embedder_factory};
 use crate::support::ui::{Console, create_console};
 
-pub(crate) mod index;
+pub mod index;
 pub(crate) mod init;
 pub mod serve;
 
 pub struct Application {
-    ui: Box<dyn Console>,
-    embedder_factory: Box<dyn EmbedderFactory>,
+    console: Box<dyn Console>,
     server: Box<dyn Server>,
+    file_indexer: Box<dyn FileIndexer>,
+    git_indexer: Box<dyn GitIndexer>,
 }
 
 impl Default for Application {
     fn default() -> Self {
         Self::new(
             Box::new(create_console(false)),
-            Box::new(create_embedder_factory()),
             Box::new(create_server(crate::app::serve::create_serve_index_access())),
+            Box::new(FileIndexerImpl {
+                console: Box::new(create_console(false)),
+            }),
+            Box::new(GitIndexerImpl {
+                console: Box::new(create_console(false)),
+            }),
         )
     }
 }
 
 impl Application {
     pub fn new(
-        ui: Box<dyn Console>,
-        embedder_factory: Box<dyn EmbedderFactory>,
+        console: Box<dyn Console>,
         server: Box<dyn Server>,
+        file_indexer: Box<dyn FileIndexer>,
+        git_indexer: Box<dyn GitIndexer>,
     ) -> Self {
-        Self { ui, embedder_factory, server }
+        Self { console, server, file_indexer, git_indexer }
     }
 
     pub fn run_init(&self) -> anyhow::Result<()> {
@@ -41,17 +49,17 @@ impl Application {
             let existing = std::fs::read_to_string(&target)?;
             let merged = init::merge_toml(DEFAULT_TEMPLATE, &existing)?;
             std::fs::write(&target, &merged)?;
-            self.ui.info(&format!("Merged new config fields into {}", target.display()));
+            self.console.info(&format!("Merged new config fields into {}", target.display()));
         } else {
             std::fs::write(&target, DEFAULT_TEMPLATE)?;
-            self.ui.info(&format!("Generated {}", target.display()));
+            self.console.info(&format!("Generated {}", target.display()));
         }
         Ok(())
     }
 
     pub fn list_models(&self) {
         for (name, dim) in list_supported_models() {
-            self.ui.info(&format!("{} (dim: {})", name, dim));
+            self.console.info(&format!("{} (dim: {})", name, dim));
         }
     }
 
@@ -65,7 +73,7 @@ impl Application {
         let dir = input_path.unwrap_or_else(|| PathBuf::from("."));
         let dir = dir.canonicalize()?;
 
-        let file_enabled = config.file.as_ref().map(|f| f.enabled).unwrap_or(true);
+        let file_enabled = config.file.as_ref().is_some_and(|f| f.enabled);
         if file_enabled {
             self.run_file_index_workflow(config, dir.clone(), rebuild, verbose)?;
         }
@@ -79,14 +87,14 @@ impl Application {
     }
 
     pub async fn run_serve(&self, config: &Config) -> anyhow::Result<()> {
-        self.server.serve(config, &*self.embedder_factory, &*self.ui).await
+        self.server.serve(config, &*self.console).await
     }
 
     fn emit_outcome(&self, outcome: Vec<(&'static str, String)>) {
         for (level, msg) in outcome {
             match level {
-                "warn" => self.ui.warn(&msg),
-                _ => self.ui.info(&msg),
+                "warn" => self.console.warn(&msg),
+                _ => self.console.info(&msg),
             }
         }
     }
@@ -102,8 +110,7 @@ impl Application {
             input_root,
             rebuild,
         };
-        let workflow = index::file::FileIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
-        let outcome = workflow.run(request)?;
+        let outcome = self.file_indexer.run(config, request)?;
         self.emit_outcome(outcome.format_for_ui());
         Ok(())
     }
@@ -120,8 +127,7 @@ impl Application {
             rebuild,
             verbose,
         };
-        let workflow = index::git::GitIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
-        let outcome = workflow.run(request)?;
+        let outcome = self.git_indexer.run(config, request)?;
         self.emit_outcome(outcome.format_for_ui());
         Ok(())
     }
@@ -171,8 +177,13 @@ mod tests {
 
         let app = Application::new(
             Box::new(create_console(false)),
-            Box::new(create_embedder_factory()),
             Box::new(create_server(create_serve_index_access())),
+            Box::new(FileIndexerImpl {
+                console: Box::new(create_console(false)),
+            }),
+            Box::new(GitIndexerImpl {
+                console: Box::new(create_console(false)),
+            }),
         );
 
         app.run_index(&config, Some(dir.clone()), false, false).unwrap();

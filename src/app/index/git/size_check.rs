@@ -1,28 +1,28 @@
 use std::path::Path;
 
-use crate::config::GitConfig;
-use crate::app::index::git::GitIndexer;
+use crate::config::{Config, GitConfig};
 
-use super::GitIndexWorkflow;
+use super::GitIndexerImpl;
 
-impl<'a> GitIndexWorkflow<'a> {
+impl GitIndexerImpl {
     pub(super) fn check_git_size(
         &self,
         repo_path: &Path,
         git_config: &GitConfig,
         dims: usize,
         since_commit: Option<&str>,
+        config: &Config,
     ) -> anyhow::Result<Option<usize>> {
-        let total = GitIndexer::estimate_commit_count(repo_path, git_config, since_commit)?;
-        let estimated_mb = GitIndexer::estimate_git_index_size(total, dims) / (1024 * 1024);
+        let total = super::estimate_commit_count(repo_path, git_config, since_commit)?;
+        let estimated_mb = super::estimate_git_index_size(total, dims) / (1024 * 1024);
         let advice = "To reduce the size:\n  - Set [git] depth_limit to a smaller value in docent.toml\n  - Increase [index] max_size_mb in docent.toml".to_string();
-        if estimated_mb > self.config.index.max_size_mb {
-            self.ui.warn(&format_size_warning(
+        if estimated_mb > config.index.max_size_mb {
+            self.console.warn(&format_size_warning(
                 estimated_mb,
-                self.config.index.max_size_mb,
+                config.index.max_size_mb,
                 &advice,
             ));
-            if !self.ui.confirm("Continue?")? {
+            if !self.console.confirm("Continue?")? {
                 return Ok(None);
             }
         }

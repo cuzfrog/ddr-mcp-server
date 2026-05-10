@@ -1,7 +1,7 @@
 use crate::app::index::chunking::{self, Chunk, ChunkingConfig};
 use crate::config::IndexConfig;
 use crate::domain::ChunkMetadata;
-use crate::index::embedder::EmbeddingService;
+use crate::index::embedder::Embedder;
 use crate::app::index::pipeline::types::{Bm25IndexBuilder, IndexableDocument, IndexedBatch};
 use crate::support::progress::ProgressSink;
 
@@ -30,7 +30,7 @@ impl IndexingPipeline {
     pub fn run(
         &self,
         docs: &[IndexableDocument],
-        embedder: &mut dyn EmbeddingService,
+        embedder: &mut dyn Embedder,
         progress: Option<&dyn ProgressSink>,
         bm25_k1: f32,
         bm25_b: f32,

@@ -32,4 +32,3 @@ pub use repository::{IndexSizeInfo, LoadMergedResult, MergedIndex};
 pub(crate) use repository::{IndexRepository, StoreMergedRequest};
 pub use vector_store::VectorStore;
 pub mod embedder;
-pub mod embedder_factory;

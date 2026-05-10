@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::index::embedder_factory::EmbedderFactory;
+
 use crate::support::ui::Console;
 
 pub(crate) mod rebuild;
@@ -11,17 +11,19 @@ mod discover;
 mod diff;
 mod extract;
 mod merge;
-mod indexer;
 
-pub(crate) use indexer::FileIndexer;
+pub(crate) use discover::discover_files;
+pub(crate) use diff::diff_files;
+pub(crate) use extract::prepare_files;
+pub(crate) use merge::{extract_old_hashes, merge_incremental};
 
-pub(crate) struct FileIndexRequest {
+pub struct FileIndexRequest {
     pub input_root: PathBuf,
     pub rebuild: bool,
 }
 
 #[derive(Debug)]
-pub(crate) enum FileIndexOutcome {
+pub enum FileIndexOutcome {
     Aborted,
     UpToDate,
     Indexed {
@@ -59,37 +61,31 @@ impl FileIndexOutcome {
     }
 }
 
-pub(crate) struct FileIndexWorkflow<'a> {
-    config: &'a Config,
-    ui: &'a dyn Console,
-    embedder_factory: &'a dyn EmbedderFactory,
+pub trait FileIndexer: Send + Sync {
+    fn run(&self, config: &Config, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome>;
 }
 
-impl<'a> FileIndexWorkflow<'a> {
-    pub(crate) fn new(
-        config: &'a Config,
-        ui: &'a dyn Console,
-        embedder_factory: &'a dyn EmbedderFactory,
-    ) -> Self {
-        Self { config, ui, embedder_factory }
-    }
+pub struct FileIndexerImpl {
+    pub console: Box<dyn Console>,
+}
 
-    pub(crate) fn run(&self, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
+impl FileIndexer for FileIndexerImpl {
+    fn run(&self, config: &Config, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
         if request.rebuild {
-            self.rebuild(&request)
+            self.rebuild(config, &request)
         } else {
-            self.incremental(&request)
+            self.incremental(config, &request)
         }
     }
+}
 
-    fn file_glob_patterns(&self) -> Vec<String> {
-        self.config.file.as_ref().map(|f| f.glob_patterns.clone()).unwrap_or_else(|| {
-            vec!["*.md".to_string(), "*.txt".to_string()]
-        })
+impl FileIndexerImpl {
+    fn file_glob_patterns<'a>(&self, config: &'a Config) -> &'a [String] {
+        &config.file.as_ref().unwrap().glob_patterns
     }
 
-    fn file_size_limit_mb(&self) -> u64 {
-        self.config.file.as_ref().map(|f| f.file_size_limit_mb).unwrap_or(0)
+    fn file_size_limit_mb(&self, config: &Config) -> u64 {
+        config.file.as_ref().unwrap().file_size_limit_mb
     }
 }
 
@@ -100,13 +96,19 @@ mod tests {
     use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
     use crate::config::IndexConfig;
     use crate::domain::ChunkKind;
-    use crate::index::embedder::EmbeddingService;
+    use crate::index::embedder::Embedder;
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
 
     fn file_config(persist: &Path) -> Config {
         let mut config = Config::default();
         config.index.persist_path = persist.to_string_lossy().to_string();
+        config.index.embedding_model = "BGESmallENV15Q".to_string();
+        config.file = Some(crate::config::FileConfig {
+            enabled: true,
+            glob_patterns: vec!["*.md".to_string()],
+            file_size_limit_mb: 0,
+        });
         config
     }
 
@@ -142,13 +144,14 @@ mod tests {
         create_index_at(&persist, &config.index);
 
         let ui = crate::tests::fixtures::RecordingUi::never_confirm();
-        let factory = crate::tests::fixtures::FakeEmbedderFactory;
-        let workflow = FileIndexWorkflow::new(&config, &ui, &factory);
+        let indexer = FileIndexerImpl {
+            console: Box::new(ui),
+        };
         let request = FileIndexRequest {
             input_root: persist.clone(),
             rebuild: true,
         };
-        let result = workflow.run(request).unwrap();
+        let result = indexer.run(&config, request).unwrap();
         assert!(matches!(result, FileIndexOutcome::Aborted));
         let _ = std::fs::remove_dir_all(&persist);
     }
@@ -166,13 +169,14 @@ mod tests {
         write_file(&sources, "b.md", "# Second File\nmore content");
 
         let ui = crate::tests::fixtures::RecordingUi::always_confirm();
-        let factory = crate::tests::fixtures::FakeEmbedderFactory;
-        let workflow = FileIndexWorkflow::new(&config, &ui, &factory);
+        let indexer = FileIndexerImpl {
+            console: Box::new(ui),
+        };
         let request = FileIndexRequest {
             input_root: sources,
             rebuild: true,
         };
-        let result = workflow.run(request).unwrap();
+        let result = indexer.run(&config, request).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));
         if let FileIndexOutcome::Indexed { chunk_count, .. } = result {
             assert!(chunk_count > 0, "Should index at least some chunks");
