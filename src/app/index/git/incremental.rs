@@ -78,24 +78,11 @@ impl GitIndexerImpl {
 #[cfg(test)]
 mod tests {
     use super::super::GitIndexer;
-    use crate::config::{GitConfig, IndexConfig};
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
     #[test]
     fn incremental_without_index_returns_error() {
         let persist = make_temp_dir("git_inc_no_index");
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let git_config = GitConfig {
-            depth_limit: -1,
-            branch: "main".to_string(),
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-        };
+        let (index_config, git_config) = crate::tests::fixtures::git_index_fixtures(&persist, &["*.md"]);
         let ui = RecordingUi::always_confirm();
         let indexer = super::GitIndexerImpl {
             console: Box::new(ui),

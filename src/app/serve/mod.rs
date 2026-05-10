@@ -23,7 +23,7 @@ pub(crate) trait ServeIndexAccess: Send + Sync {
     ) -> anyhow::Result<LoadMergedResult>;
 }
 
-pub(super) struct ServeIndexAccessImpl;
+struct ServeIndexAccessImpl;
 
 impl ServeIndexAccess for ServeIndexAccessImpl {
     fn check_size(

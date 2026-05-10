@@ -97,7 +97,14 @@ pub fn make_temp_dir(name: &str) -> PathBuf {
 pub fn read_index_at(
     path: &std::path::Path,
 ) -> (crate::index::IndexHeader, VectorStore, Vec<ChunkMetadata>) {
-    let repo = IndexRepository::new(path, &IndexConfig::default());
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: path.to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+    let repo = IndexRepository::new(path, &config);
     let stored = repo.load_one(SourceIndexKind::File).unwrap();
     (stored.header, stored.vectors, stored.metadata)
 }

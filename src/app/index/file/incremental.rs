@@ -121,27 +121,12 @@ impl FileIndexerImpl {
 mod tests {
     use super::FileIndexOutcome;
     use super::super::FileIndexer;
-    use crate::config::{FileConfig, IndexConfig};
+    use crate::config::IndexConfig;
     use crate::domain::ChunkKind;
     use crate::index::embedder::Embedder;
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::app::index::pipeline::{IndexingPipeline, IndexableDocument, unique_doc_count};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, RecordingUi};
-    fn file_config(persist: &std::path::Path) -> (IndexConfig, FileConfig) {
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let file_config = FileConfig {
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-            file_size_limit_mb: 0,
-        };
-        (index_config, file_config)
-    }
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
     }
@@ -167,7 +152,7 @@ mod tests {
     #[test]
     fn incremental_behaves_like_first_time_when_no_index() {
         let persist = make_temp_dir("wf_inc_first");
-        let (ic, fc) = file_config(&persist);
+        let (ic, fc) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         let sources = persist.join("src");
         std::fs::create_dir_all(&sources).unwrap();
         write_file(&sources, "a.md", "# Content");
@@ -183,7 +168,7 @@ mod tests {
     #[test]
     fn incremental_returns_needs_rebuild_on_header_mismatch() {
         let persist = make_temp_dir("wf_inc_rebuild_needed");
-        let (ic, _fc) = file_config(&persist);
+        let (ic, _fc) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         std::fs::create_dir_all(persist.join("file")).unwrap();
         create_index_at(&persist, &ic);
         {
@@ -210,7 +195,7 @@ mod tests {
         std::fs::create_dir_all(&sources).unwrap();
         write_file(&sources, "a.md", "# Content");
         let ui = RecordingUi::always_confirm();
-        let (ic2, fc2) = file_config(&persist);
+        let (ic2, fc2) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         let indexer = super::FileIndexerImpl {
             console: Box::new(ui),
         };
@@ -222,7 +207,7 @@ mod tests {
     #[test]
     fn incremental_returns_error_on_corrupted_index() {
         let persist = make_temp_dir("wf_inc_corrupted");
-        let (ic, fc) = file_config(&persist);
+        let (ic, fc) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         std::fs::create_dir_all(persist.join("file")).unwrap();
         {
             let mut embedder = FakeEmbedder::new();
@@ -259,7 +244,7 @@ mod tests {
     #[test]
     fn indexed_outcome_reports_correct_counts() {
         let persist = make_temp_dir("wf_inc_counts");
-        let (ic, fc) = file_config(&persist);
+        let (ic, fc) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         let sources = persist.join("src");
         std::fs::create_dir_all(&sources).unwrap();
         write_file(&sources, "a.md", "# Doc A\n\nParagraph A1.\n\nParagraph A2.");
@@ -281,7 +266,7 @@ mod tests {
     #[test]
     fn test_incremental_index_preserves_bm25_data() {
         let persist = make_temp_dir("wf_inc_bm25");
-        let (ic, fc) = file_config(&persist);
+        let (ic, fc) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         let sources = persist.join("src");
         std::fs::create_dir_all(&sources).unwrap();
         write_file(&sources, "a.md", "# Doc A\n\nContent A.");

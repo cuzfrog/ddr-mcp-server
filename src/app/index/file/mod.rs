@@ -12,10 +12,10 @@ mod diff;
 mod extract;
 mod merge;
 
-pub(crate) use discover::discover_files;
-pub(crate) use diff::diff_files;
-pub(crate) use extract::prepare_files;
-pub(crate) use merge::{extract_old_hashes, merge_incremental};
+pub(super) use discover::discover_files;
+pub(super) use diff::diff_files;
+pub(super) use extract::prepare_files;
+pub(super) use merge::{extract_old_hashes, merge_incremental};
 
 pub struct FileIndexRequest {
     pub input_root: PathBuf,
@@ -108,22 +108,6 @@ mod tests {
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
 
-    fn file_config(persist: &Path) -> (IndexConfig, FileConfig) {
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let file_config = FileConfig {
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-            file_size_limit_mb: 0,
-        };
-        (index_config, file_config)
-    }
-
     fn write_file(dir: &Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
     }
@@ -151,7 +135,7 @@ mod tests {
     #[test]
     fn rebuild_aborts_when_index_exists_and_confirmation_false() {
         let persist = make_temp_dir("wf_rebuild_abort");
-        let (index_config, file_config) = file_config(&persist);
+        let (index_config, file_config) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         std::fs::create_dir_all(persist.join("file")).unwrap();
         create_index_at(&persist, &index_config);
 
@@ -171,7 +155,7 @@ mod tests {
     #[test]
     fn rebuild_deletes_and_rewrites_when_confirmed() {
         let persist = make_temp_dir("wf_rebuild_overwrite");
-        let (index_config, file_config) = file_config(&persist);
+        let (index_config, file_config) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         std::fs::create_dir_all(persist.join("file")).unwrap();
         create_index_at(&persist, &index_config);
 

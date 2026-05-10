@@ -71,30 +71,14 @@ impl FileIndexerImpl {
 mod tests {
     use super::FileIndexOutcome;
     use super::super::FileIndexer;
-    use crate::config::{FileConfig, IndexConfig};
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
-    fn file_config(persist: &std::path::Path) -> (IndexConfig, FileConfig) {
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let file_config = FileConfig {
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-            file_size_limit_mb: 0,
-        };
-        (index_config, file_config)
-    }
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
     }
     #[test]
     fn rebuild_returns_indexed_outcome_with_sources() {
         let persist = make_temp_dir("wf_rebuild_sources");
-        let (index_config, file_config) = file_config(&persist);
+        let (index_config, file_config) = crate::tests::fixtures::file_index_fixtures(&persist, &["*.md"]);
         let sources = persist.join("src");
         std::fs::create_dir_all(&sources).unwrap();
         write_file(&sources, "a.md", "# Hello World\ntest content");

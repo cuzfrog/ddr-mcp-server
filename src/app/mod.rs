@@ -164,7 +164,6 @@ mod tests {
     fn run_index_skips_both_when_file_disabled_and_git_absent() {
         let dir = make_temp_dir("app_index_both_skip");
         let mut config = serve_config_fixture(&dir);
-        config.index.embedding_model = "BGESmallENV15Q".to_string();
         config.file = Some(crate::config::FileConfig {
             enabled: false,
             glob_patterns: vec![],

@@ -119,42 +119,12 @@ impl GitIndexer for GitIndexerImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::IndexConfig;
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
-
-    fn base_config(persist: &std::path::Path) -> (IndexConfig, GitConfig) {
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let git_config = GitConfig {
-            depth_limit: -1,
-            branch: "main".to_string(),
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-        };
-        (index_config, git_config)
-    }
 
     #[test]
     fn incremental_without_existing_index_returns_error() {
         let persist = make_temp_dir("git_inc_no_existing");
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let git_config = GitConfig {
-            depth_limit: -1,
-            branch: "main".to_string(),
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-        };
+        let (index_config, git_config) = crate::tests::fixtures::git_index_fixtures(&persist, &["*.md"]);
         let ui = RecordingUi::always_confirm();
         let indexer = GitIndexerImpl {
             console: Box::new(ui),

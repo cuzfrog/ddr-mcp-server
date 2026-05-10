@@ -78,7 +78,6 @@ impl GitIndexerImpl {
 #[cfg(test)]
 mod tests {
     use super::super::GitIndexer;
-    use crate::config::{GitConfig, IndexConfig};
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
     #[test]
     fn rebuild_requires_existing_git_repo_to_proceed() {
@@ -86,19 +85,7 @@ mod tests {
         // It expects the indexer to proceed past validation; it may fail later when
         // trying to access a non-existent git repo, but that's expected.
         let persist = make_temp_dir("git_rebuild_no_git");
-        let index_config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-        let git_config = GitConfig {
-            depth_limit: -1,
-            branch: "main".to_string(),
-            enabled: true,
-            glob_patterns: vec!["*.md".to_string()],
-        };
+        let (index_config, git_config) = crate::tests::fixtures::git_index_fixtures(&persist, &["*.md"]);
         let ui = RecordingUi::always_confirm();
         let indexer = super::GitIndexerImpl {
             console: Box::new(ui),
