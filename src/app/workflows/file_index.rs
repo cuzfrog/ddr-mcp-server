@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::embedder::EmbedderFactory;
-use crate::index::{self, IndexRepository, SourceIndexKind};
+use crate::index::{IndexRepository, SourceIndexKind};
 use crate::indexing;
 use crate::indexing::{unique_doc_count, Bm25IndexBuilder, IndexedBatch};
 use crate::sources::file::FileIndexer;
@@ -146,7 +146,7 @@ impl<'a> FileIndexWorkflow<'a> {
 
         let (old_hashes, old_metadata, old_vectors, index_exists) = match repo.load_one(SourceIndexKind::File) {
             Ok(stored) => {
-                if let Err(e) = index::validate_header(&stored.header, &self.config.index) {
+                if let Err(e) = stored.header.validate_against(&self.config.index) {
                     self.ui.warn(&format!("{}", e));
                     return Ok(FileIndexOutcome::NeedsRebuild {
                         reason: format!("{} Run with --rebuild to re-index.", e),

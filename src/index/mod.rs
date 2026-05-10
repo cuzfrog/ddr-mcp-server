@@ -2,7 +2,6 @@ mod schema;
 mod bm25_schema;
 mod bm25_storage;
 mod storage;
-mod validation;
 mod repository;
 mod sub_index;
 
@@ -24,5 +23,6 @@ impl SourceIndexKind {
 #[cfg(test)]
 pub(crate) use bm25_storage::read_bm25_index;
 pub(crate) use repository::{IndexRepository, IndexSizeInfo, LoadMergedResult, MergedIndex};
-pub(crate) use validation::validate_header;
-pub(crate) use schema::{IndexHeader, VectorStore, SCHEMA_VERSION};
+pub(crate) use schema::VectorStore;
+#[cfg(test)]
+pub(crate) use schema::{IndexHeader, SCHEMA_VERSION};

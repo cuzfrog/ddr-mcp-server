@@ -1,12 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use super::schema::build_header;
 use crate::config::IndexConfig;
 use crate::documents::ChunkMetadata;
 use crate::index::bm25_schema::Bm25IndexHeader;
+use crate::index::schema::IndexHeader;
 use crate::index::schema::VectorStore;
 use crate::index::sub_index::SubIndex;
-use crate::index::validate_header;
 use crate::index::SourceIndexKind;
 use crate::indexing::IndexedBatch;
 use crate::support::fs::dir_size;
@@ -51,7 +50,7 @@ impl IndexRepository {
         doc_count: usize,
         last_indexed_commit: Option<String>,
     ) -> anyhow::Result<()> {
-        let header = build_header(
+        let header = IndexHeader::from_config(
             &self.config,
             embedding_dims,
             &batch.metadata,
@@ -76,7 +75,7 @@ impl IndexRepository {
 
         let file_index = if file_exists {
             let mut sub = SubIndex::load(&self.persist_path, SourceIndexKind::File)?;
-            validate_header(&sub.header, &self.config)?;
+            sub.header.validate_against(&self.config)?;
             if sub.bm25.is_none() && !sub.metadata.is_empty() {
                 let notice = sub.rebuild_bm25(&self.persist_path, SourceIndexKind::File, k1, b)?;
                 notices.push(notice);
@@ -105,7 +104,7 @@ impl IndexRepository {
                     );
                 }
             } else {
-                validate_header(&sub.header, &self.config)?;
+                sub.header.validate_against(&self.config)?;
             }
             if sub.bm25.is_none() && !sub.metadata.is_empty() {
                 let notice = sub.rebuild_bm25(&self.persist_path, SourceIndexKind::Git, k1, b)?;
