@@ -67,8 +67,8 @@ pub(crate) fn split_into_sections(body: &str) -> Vec<(Option<String>, String, us
     sections
 }
 
-use crate::chunking::counter::TokenCounter;
-use crate::chunking::engine::{Chunk, ChunkingConfig};
+use crate::app::index::chunking::counter::TokenCounter;
+use crate::app::index::chunking::engine::{Chunk, ChunkingConfig};
 
 // ---------------------------------------------------------------------------
 // chunk_section — apply sliding window within a single section

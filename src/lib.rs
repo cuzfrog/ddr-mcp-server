@@ -5,12 +5,10 @@
 
 pub mod app;
 pub mod documents;
-pub mod chunking;
 pub mod config;
 pub mod embedder;
 pub mod index;
-pub(crate) mod interfaces;
-pub mod search;
+pub(crate) mod mcp;
 pub mod support;
 pub(crate) mod ui;
 

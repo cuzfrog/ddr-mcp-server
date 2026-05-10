@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use anyhow::Context;
 
-use crate::chunking::TokenCounter;
+use crate::app::index::chunking::TokenCounter;
 
 // ---------------------------------------------------------------------------
 // EmbeddingService trait
@@ -145,7 +145,7 @@ impl EmbeddingService for Embedder {
     }
 
     fn token_counter(&self) -> Box<dyn TokenCounter> {
-        Box::new(crate::chunking::HuggingFaceTokenCounter::from_tokenizer(
+        Box::new(crate::app::index::chunking::HuggingFaceTokenCounter::from_tokenizer(
             self.model.tokenizer.clone(),
         ))
     }

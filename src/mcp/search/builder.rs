@@ -3,10 +3,10 @@ use std::sync::Arc;
 use anyhow::Context;
 
 use crate::documents::ChunkMetadata;
-use crate::search::backend::ScoreBackend;
-use crate::search::fusion::ScoreFusion;
-use crate::search::orchestrator::HybridSearchService;
-use crate::search::ranking::Ranker;
+use crate::mcp::search::backend::ScoreBackend;
+use crate::mcp::search::fusion::ScoreFusion;
+use crate::mcp::search::orchestrator::HybridSearchService;
+use crate::mcp::search::ranking::Ranker;
 
 pub(crate) struct HybridSearchServiceBuilder {
     semantic_backend: Option<Arc<dyn ScoreBackend>>,

@@ -1,9 +1,6 @@
 use std::path::Path;
 
-use async_trait::async_trait;
-
-use crate::app::Application;
-use crate::app::serve::server::Server;
+use crate::app::serve::server::prepare_serve;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::config::{Config, IndexConfig};
 use crate::embedder::{EmbedderFactory, EmbeddingService};
@@ -98,24 +95,6 @@ impl EmbedderFactory for FailingEmbedderFactory {
 }
 
 // ---------------------------------------------------------------------------
-// FakeServer — no-op Server for tests that don't exercise networking
-// ---------------------------------------------------------------------------
-
-struct FakeServer;
-
-#[async_trait]
-impl Server for FakeServer {
-    async fn serve(
-        &self,
-        _router: axum::Router,
-        _port: u16,
-        _ui: &dyn crate::support::ui::WorkflowUi,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Helper to build a minimal Config pointing at a temp persist dir
 // ---------------------------------------------------------------------------
 
@@ -160,15 +139,11 @@ fn serve_config(persist_path: &Path) -> Config {
 fn oversized_index_aborts_when_not_confirmed() {
     let persist = make_temp_dir("serve_oversized_abort");
     let config = serve_config(&persist);
+    let index_access = FakeServeIndexAccess::new().with_oversized();
+    let ui = RecordingUi::never_confirm();
+    let factory = FakeEmbedderFactory;
 
-    let app = Application::new(
-        Box::new(RecordingUi::never_confirm()),
-        Box::new(FakeEmbedderFactory),
-        Box::new(FakeServeIndexAccess::new().with_oversized()),
-        Box::new(FakeServer),
-    );
-
-    let result = app.prepare_serve(&config);
+    let result = prepare_serve(&index_access, &factory, &config, &ui);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("Aborted"), "Expected abort error, got: {}", err);
@@ -183,15 +158,11 @@ fn oversized_index_continues_when_confirmed() {
     let config = serve_config(&persist);
     let mut oversized_config = config.clone();
     oversized_config.index.max_size_mb = 1;
+    let index_access = RealServeIndexAccess;
+    let ui = RecordingUi::always_confirm();
+    let factory = FakeEmbedderFactory;
 
-    let app = Application::new(
-        Box::new(RecordingUi::always_confirm()),
-        Box::new(FakeEmbedderFactory),
-        Box::new(RealServeIndexAccess),
-        Box::new(FakeServer),
-    );
-
-    let result = app.prepare_serve(&oversized_config);
+    let result = prepare_serve(&index_access, &factory, &oversized_config, &ui);
     assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
     let _ = std::fs::remove_dir_all(&persist);
@@ -201,15 +172,11 @@ fn oversized_index_continues_when_confirmed() {
 fn merged_index_loading_error_propagates() {
     let persist = make_temp_dir("serve_merge_error");
     let config = serve_config(&persist);
+    let index_access = FakeServeIndexAccess::new().with_load_error();
+    let ui = RecordingUi::always_confirm();
+    let factory = FakeEmbedderFactory;
 
-    let app = Application::new(
-        Box::new(RecordingUi::always_confirm()),
-        Box::new(FakeEmbedderFactory),
-        Box::new(FakeServeIndexAccess::new().with_load_error()),
-        Box::new(FakeServer),
-    );
-
-    let result = app.prepare_serve(&config);
+    let result = prepare_serve(&index_access, &factory, &config, &ui);
     assert!(result.is_err());
     let err = result.unwrap_err();
     let display = err.to_string();
@@ -232,15 +199,11 @@ fn merged_index_loading_error_propagates() {
 fn embedder_init_error_propagates() {
     let persist = make_temp_dir("serve_embedder_error");
     let config = serve_config(&persist);
+    let index_access = FakeServeIndexAccess::new();
+    let ui = RecordingUi::always_confirm();
+    let factory = FailingEmbedderFactory;
 
-    let app = Application::new(
-        Box::new(RecordingUi::always_confirm()),
-        Box::new(FailingEmbedderFactory),
-        Box::new(FakeServeIndexAccess::new()),
-        Box::new(FakeServer),
-    );
-
-    let result = app.prepare_serve(&config);
+    let result = prepare_serve(&index_access, &factory, &config, &ui);
     assert!(result.is_err());
     let err = result.unwrap_err();
     let display = err.to_string();
@@ -264,15 +227,11 @@ fn bootstrap_succeeds_with_fake_dependencies() {
     let persist = make_temp_dir("serve_bootstrap");
     create_minimal_file_index(&persist);
     let config = serve_config(&persist);
+    let index_access = RealServeIndexAccess;
+    let ui = RecordingUi::always_confirm();
+    let factory = FakeEmbedderFactory;
 
-    let app = Application::new(
-        Box::new(RecordingUi::always_confirm()),
-        Box::new(FakeEmbedderFactory),
-        Box::new(RealServeIndexAccess),
-        Box::new(FakeServer),
-    );
-
-    let result = app.prepare_serve(&config);
+    let result = prepare_serve(&index_access, &factory, &config, &ui);
     assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
     let _ = std::fs::remove_dir_all(&persist);

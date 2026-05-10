@@ -23,7 +23,7 @@ After major changes, run e2e tests by:
 ### Task Planning
 Tasks reside in `.lissom/tasks/<task_id>/Specs.md`. The user may ask for a spec refinement and subsequent implementation. Use Tool `question`/`AskUserQuestion` to interview the user if you have any questions or assumptions. The implementation should be done in a feature branch named `<task_id>_<short-description>`, e.g., `IMPL-2_config-loader` (the user may have already created it). After the task is complete, create a PR.
 
-### Implementation Hooks
+### Implementation Checklist
 - When MCP schema changes, update Web UI accordingly.
 - When files/dirs are updated, verify and keep below `Architecture` section in sync.
 
@@ -119,7 +119,7 @@ This applies to all dependencies, including python and javascript.
 - **Naming:** Snake_case for files and functions. Types are PascalCase. Constants are UPPER_SNAKE_CASE. Variable naming should be specific to carry their function. E.g. `token_counter` should not be `counter`, which can be confusing.
 - **No unsafe code.** No `unsafe` blocks unless absolutely required by FFI (fastembed/ort handle this internally).
 - **No Dead Code** No `allow(dead_code)`. Remove unused code immediately to maintain codebase health.
-- **Module Interface at Top** Public types, contract, methods should be at the top of the files, private implementation details should be at the bottom.
+- **Module Interface at Top** Public types, contract, methods should be at the top of the files, private implementation details should be at the bottom. If a private function only is used in the same file, it should be below its callers.
 - **Favor Object Oriented Design** Favor trait-based design over procedural design.
 
 

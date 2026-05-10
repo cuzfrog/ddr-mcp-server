@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::SearchConfig;
 use crate::embedder::{EmbedderFactory, EmbeddingService};
 use crate::index::MergedIndex;
-use crate::search::{
+use crate::mcp::search::{
     build_bm25_backend, create_fusion, builder::HybridSearchServiceBuilder, DecayRanker,
     HybridSearchService, ScoreBackend, VectorScoreBackend, ZeroScoreBackend,
 };
@@ -82,7 +82,7 @@ mod tests {
     use crate::documents::{ChunkKind, ChunkMetadata, DocumentContext};
     use crate::index::MergedIndex;
     use crate::index::VectorStore;
-    use crate::search::SearchService;
+    use crate::mcp::search::SearchService;
     use crate::tests::fixtures::FakeEmbedder;
 
     struct FakeEmbedderFactory;

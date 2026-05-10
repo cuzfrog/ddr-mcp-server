@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::documents::ChunkMetadata;
-use crate::search::backend::ScoreBackend;
-use crate::search::fusion::ScoreFusion;
-use crate::search::ranking::Ranker;
-use crate::search::types::SearchResult;
-use crate::search::SearchService;
+use crate::mcp::search::backend::ScoreBackend;
+use crate::mcp::search::fusion::ScoreFusion;
+use crate::mcp::search::ranking::Ranker;
+use crate::mcp::search::types::SearchResult;
+use crate::mcp::search::SearchService;
 
 /// Orchestrates hybrid search: scores from two backends → fused → ranked.
 pub(crate) struct HybridSearchService {

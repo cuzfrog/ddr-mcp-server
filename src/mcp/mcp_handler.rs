@@ -6,7 +6,7 @@ use rmcp::ServerHandler;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use super::search_tool::SearchExecutor;
+use crate::mcp::search_tool::SearchExecutor;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchDdrParams {

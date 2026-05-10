@@ -1,4 +1,4 @@
-use crate::chunking::{self, Chunk, ChunkingConfig};
+use crate::app::index::chunking::{self, Chunk, ChunkingConfig};
 use crate::config::IndexConfig;
 use crate::documents::ChunkMetadata;
 use crate::embedder::EmbeddingService;
@@ -12,11 +12,11 @@ const BATCH_SIZE: usize = 64;
 
 pub struct IndexingPipeline {
     config: ChunkingConfig,
-    token_counter: Box<dyn crate::chunking::TokenCounter>,
+    token_counter: Box<dyn crate::app::index::chunking::TokenCounter>,
 }
 
 impl IndexingPipeline {
-    pub fn new(config: &IndexConfig, token_counter: Box<dyn crate::chunking::TokenCounter>) -> Self {
+    pub fn new(config: &IndexConfig, token_counter: Box<dyn crate::app::index::chunking::TokenCounter>) -> Self {
         let chunking_config = ChunkingConfig {
             chunk_size: config.chunk_size,
             chunk_overlap: config.chunk_overlap,

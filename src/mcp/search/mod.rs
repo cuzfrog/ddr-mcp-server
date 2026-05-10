@@ -9,7 +9,7 @@ pub(crate) use fusion::create_fusion;
 pub use backend::{ScoreBackend, VectorScoreBackend};
 pub(crate) use backend::build_bm25_backend;
 pub(crate) use backend::ZeroScoreBackend;
-use crate::search::types::SearchResult;
+use crate::mcp::search::types::SearchResult;
 pub(crate) use orchestrator::HybridSearchService;
 
 /// Service interface for hybrid search.

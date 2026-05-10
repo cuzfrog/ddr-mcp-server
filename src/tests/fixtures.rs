@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::chunking::TokenCounter;
+use crate::app::index::chunking::TokenCounter;
 use crate::config::IndexConfig;
 use crate::documents::ChunkMetadata;
 use crate::embedder::{EmbedderFactory, EmbeddingService};
@@ -70,7 +70,7 @@ impl EmbeddingService for FakeEmbedder {
     }
 
     fn token_counter(&self) -> Box<dyn TokenCounter> {
-        Box::new(crate::chunking::WhitespaceTokenCounter)
+        Box::new(crate::app::index::chunking::WhitespaceTokenCounter)
     }
 }
 

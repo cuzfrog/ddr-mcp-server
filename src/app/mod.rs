@@ -1,17 +1,9 @@
 use std::path::PathBuf;
 
-use rmcp::transport::streamable_http_server::{
-    session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
-};
-
-use crate::app::serve::bootstrap::PreparedServe;
 use crate::app::serve::server::{Server, TokioHttpServer};
-use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
-use crate::interfaces::mcp::DocentMcpServer;
-use crate::interfaces::search_tool::SearchExecutor;
 use crate::support::ui::{ConsoleUi, WorkflowUi};
 
 pub(crate) mod index;
@@ -90,64 +82,13 @@ impl Application {
     }
 
     pub async fn run_serve(&self, config: &Config) -> anyhow::Result<()> {
-        self.ui.info(&format!(
-            "Serving index at {}",
-            config.persist_path_buf().display(),
-        ));
-
-        let prepared = self.prepare_serve(config)?;
+        let prepared = crate::app::serve::server::prepare_serve(
+            &*self.index_access,
+            &*self.embedder_factory,
+            config,
+            &*self.ui,
+        )?;
         self.server.serve(prepared.router, config.server.port, &*self.ui).await
-    }
-
-    pub(crate) fn prepare_serve(&self, config: &Config) -> anyhow::Result<PreparedServe> {
-        let persist_path = config.persist_path_buf();
-
-        if let Some(info) = self.index_access.check_size(&persist_path, config.index.max_size_mb)? {
-            self.ui.warn(&format!(
-                "The total index is {:.1} MB, which exceeds the configured limit of {} MB.",
-                info.total_bytes as f64 / (1024.0 * 1024.0),
-                config.index.max_size_mb
-            ));
-            if persist_path.join("file").exists() {
-                self.ui.warn(&format!("  file/ subdirectory: {:.1} MB", info.file_bytes as f64 / (1024.0 * 1024.0)));
-            }
-            if persist_path.join("git").exists() {
-                self.ui.warn(&format!("  git/ subdirectory:  {:.1} MB", info.git_bytes as f64 / (1024.0 * 1024.0)));
-            }
-            if !self.ui.confirm("Continue?")? {
-                anyhow::bail!("Aborted by user.");
-            }
-        }
-
-        let result = self.index_access
-            .load_merged(&persist_path, &config.index, config.search.bm25.k1, config.search.bm25.b)
-            .map_err(|e| anyhow::anyhow!("Failed to load merged index: {}", e))?;
-        for notice in &result.notices {
-            self.ui.info(notice);
-        }
-        let merged = result.merged;
-
-        let builder = HybridServiceBuilder;
-        let embedder = builder.build_embedder(&*self.embedder_factory, &config.index.embedding_model)?;
-        let search_service = std::sync::Arc::new(builder.build(
-            merged,
-            embedder,
-            &config.search,
-        )?);
-
-        let server = DocentMcpServer { search_executor: SearchExecutor::new(search_service) };
-        let service: StreamableHttpService<DocentMcpServer, LocalSessionManager> =
-            StreamableHttpService::new(
-                {
-                    let server = server.clone();
-                    move || Ok(server.clone())
-                },
-                LocalSessionManager::default().into(),
-                StreamableHttpServerConfig::default(),
-            );
-        let router = crate::ui::router(service);
-
-        Ok(PreparedServe { router })
     }
 
     fn emit_outcome(&self, outcome: Vec<(&'static str, String)>) {
