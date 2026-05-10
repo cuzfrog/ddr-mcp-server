@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use crate::app::index::chunking::TokenCounter;
 use crate::config::IndexConfig;
 use crate::domain::ChunkMetadata;
-use crate::index::embedder::{EmbedderFactory, EmbeddingService};
+use crate::index::embedder::EmbeddingService;
+use crate::index::embedder_factory::EmbedderFactory;
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
 

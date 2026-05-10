@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use crate::config::SearchConfig;
-use crate::index::embedder::{EmbedderFactory, EmbeddingService};
+use crate::index::embedder::EmbeddingService;
+use crate::index::embedder_factory::EmbedderFactory;
 use crate::index::MergedIndex;
 use crate::mcp::search::{
     build_bm25_backend, create_fusion, builder::HybridSearchServiceBuilder, DecayRanker,

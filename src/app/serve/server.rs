@@ -8,7 +8,7 @@ use rmcp::transport::streamable_http_server::{
 use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::ServeIndexAccess;
 use crate::config::Config;
-use crate::index::embedder::EmbedderFactory;
+use crate::index::embedder_factory::EmbedderFactory;
 use crate::mcp::DocentMcpServer;
 use crate::mcp::SearchExecutor;
 use crate::support::ui::Console;
@@ -18,28 +18,28 @@ pub trait Server: Send + Sync {
     async fn serve(
         &self,
         config: &Config,
-        index_access: &dyn ServeIndexAccess,
         embedder_factory: &dyn EmbedderFactory,
         ui: &dyn Console,
     ) -> anyhow::Result<()>;
 }
 
-pub fn create_server() -> impl Server {
-    TokioHttpServer
+pub fn create_server(index_access: impl ServeIndexAccess + 'static) -> impl Server {
+    TokioHttpServer { index_access: Box::new(index_access) }
 }
 
-struct TokioHttpServer;
+struct TokioHttpServer {
+    index_access: Box<dyn ServeIndexAccess>,
+}
 
 #[async_trait]
 impl Server for TokioHttpServer {
     async fn serve(
         &self,
         config: &Config,
-        index_access: &dyn ServeIndexAccess,
         embedder_factory: &dyn EmbedderFactory,
         ui: &dyn Console,
     ) -> anyhow::Result<()> {
-        let router = prepare_router(index_access, embedder_factory, config, ui)?;
+        let router = prepare_router(&*self.index_access, embedder_factory, config, ui)?;
 
         let addr = format!("127.0.0.1:{}", config.server.port);
         let listener = tokio::net::TcpListener::bind(&addr)
@@ -126,11 +126,12 @@ mod tests {
     use crate::app::serve::server::prepare_router;
     use crate::app::serve::ServeIndexAccess;
     use crate::config::{Config, IndexConfig};
-    use crate::index::embedder::{EmbedderFactory, EmbeddingService};
-    use crate::index::VectorStore;
+    use crate::index::embedder::EmbeddingService;
+    use crate::index::embedder_factory::EmbedderFactory;
     use crate::index::{
         IndexRepository, IndexSizeInfo, LoadMergedResult, MergedIndex, SourceIndexKind,
     };
+    use crate::index::VectorStore;
     use crate::tests::fixtures::{
         make_temp_dir, FakeEmbedder, FakeEmbedderFactory, RecordingUi,
     };

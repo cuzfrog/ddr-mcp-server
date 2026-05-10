@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::index::embedder::{Embedder, EmbedderFactory};
+use crate::index::embedder::Embedder;
+use crate::index::embedder_factory::EmbedderFactory;
 use crate::index::{IndexRepository, SourceIndexKind};
 use crate::support::ui::Console;
 

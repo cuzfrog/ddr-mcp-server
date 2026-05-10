@@ -43,9 +43,10 @@ struct ServeArgs {
 fn make_app(verbose: bool) -> Application {
     Application::new(
         Box::new(docent_mcp::support::ui::create_console(verbose)),
-        Box::new(docent_mcp::index::embedder::create_embedder_factory()),
-        Box::new(docent_mcp::app::serve::create_serve_index_access()),
-        Box::new(docent_mcp::app::serve::server::create_server()),
+        Box::new(docent_mcp::index::embedder_factory::create_embedder_factory()),
+        Box::new(docent_mcp::app::serve::server::create_server(
+            docent_mcp::app::serve::create_serve_index_access(),
+        )),
     )
 }
 

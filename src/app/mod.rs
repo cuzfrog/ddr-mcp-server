@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use crate::app::serve::server::{Server, create_server};
-use crate::app::serve::{ServeIndexAccess, create_serve_index_access};
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
-use crate::index::embedder::{list_supported_models, EmbedderFactory, create_embedder_factory};
+use crate::index::embedder::list_supported_models;
+use crate::index::embedder_factory::{EmbedderFactory, create_embedder_factory};
 use crate::support::ui::{Console, create_console};
 
 pub(crate) mod index;
@@ -13,7 +13,6 @@ pub mod serve;
 pub struct Application {
     ui: Box<dyn Console>,
     embedder_factory: Box<dyn EmbedderFactory>,
-    index_access: Box<dyn ServeIndexAccess>,
     server: Box<dyn Server>,
 }
 
@@ -22,8 +21,7 @@ impl Default for Application {
         Self::new(
             Box::new(create_console(false)),
             Box::new(create_embedder_factory()),
-            Box::new(create_serve_index_access()),
-            Box::new(create_server()),
+            Box::new(create_server(crate::app::serve::create_serve_index_access())),
         )
     }
 }
@@ -32,10 +30,9 @@ impl Application {
     pub fn new(
         ui: Box<dyn Console>,
         embedder_factory: Box<dyn EmbedderFactory>,
-        index_access: Box<dyn ServeIndexAccess>,
         server: Box<dyn Server>,
     ) -> Self {
-        Self { ui, embedder_factory, index_access, server }
+        Self { ui, embedder_factory, server }
     }
 
     pub fn run_init(&self) -> anyhow::Result<()> {
@@ -82,7 +79,7 @@ impl Application {
     }
 
     pub async fn run_serve(&self, config: &Config) -> anyhow::Result<()> {
-        self.server.serve(config, &*self.index_access, &*self.embedder_factory, &*self.ui).await
+        self.server.serve(config, &*self.embedder_factory, &*self.ui).await
     }
 
     fn emit_outcome(&self, outcome: Vec<(&'static str, String)>) {
@@ -175,8 +172,7 @@ mod tests {
         let app = Application::new(
             Box::new(create_console(false)),
             Box::new(create_embedder_factory()),
-            Box::new(create_serve_index_access()),
-            Box::new(create_server()),
+            Box::new(create_server(create_serve_index_access())),
         );
 
         app.run_index(&config, Some(dir.clone()), false, false).unwrap();

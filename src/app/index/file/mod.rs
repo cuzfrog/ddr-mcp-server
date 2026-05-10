@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::config::Config;
-use crate::index::embedder::EmbedderFactory;
+use crate::index::embedder_factory::EmbedderFactory;
 use crate::support::ui::Console;
 
 pub(crate) mod rebuild;
