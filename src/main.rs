@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use docent_mcp::app::application::Application;
+use docent_mcp::app::serve::server::TokioHttpServer;
 use docent_mcp::app::serve::RealServeIndexAccess;
 use docent_mcp::config::Config;
 use docent_mcp::embedder::RealEmbedderFactory;
@@ -50,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
         Box::new(ConsoleUi),
         Box::new(RealEmbedderFactory),
         Box::new(RealServeIndexAccess),
+        Box::new(TokioHttpServer),
     );
     match cli.command {
         Commands::IndexFile(args) => {

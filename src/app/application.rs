@@ -1,16 +1,15 @@
 use std::path::PathBuf;
 
-use anyhow::Context;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 
+use crate::app::index;
 use crate::app::init;
 use crate::app::serve::bootstrap::PreparedServe;
-use crate::app::serve::bootstrap::shutdown_signal;
+use crate::app::serve::server::{Server, TokioHttpServer};
 use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
-use crate::app::workflows;
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
 use crate::interfaces::mcp::DocentMcpServer;
@@ -21,6 +20,7 @@ pub struct Application {
     ui: Box<dyn WorkflowUi>,
     embedder_factory: Box<dyn EmbedderFactory>,
     index_access: Box<dyn ServeIndexAccess>,
+    server: Box<dyn Server>,
 }
 
 impl Default for Application {
@@ -29,6 +29,7 @@ impl Default for Application {
             Box::new(ConsoleUi),
             Box::new(RealEmbedderFactory),
             Box::new(RealServeIndexAccess),
+            Box::new(TokioHttpServer),
         )
     }
 }
@@ -38,8 +39,9 @@ impl Application {
         ui: Box<dyn WorkflowUi>,
         embedder_factory: Box<dyn EmbedderFactory>,
         index_access: Box<dyn ServeIndexAccess>,
+        server: Box<dyn Server>,
     ) -> Self {
-        Self { ui, embedder_factory, index_access }
+        Self { ui, embedder_factory, index_access, server }
     }
 
     pub fn run_init(&self) -> anyhow::Result<()> {
@@ -86,28 +88,13 @@ impl Application {
     }
 
     pub async fn run_serve(&self, config: &Config) -> anyhow::Result<()> {
-
-        let prepared = self.prepare_serve(config)?;
-
-        let addr = format!("127.0.0.1:{}", config.server.port);
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .await
-            .context("Failed to bind TCP listener")?;
-        let local_addr = listener
-            .local_addr()
-            .context("Failed to get local address")?;
         self.ui.info(&format!(
-            "docent server listening on http://{} serving index at {} (open in browser for web UI)",
-            local_addr,
+            "Serving index at {}",
             config.persist_path_buf().display(),
         ));
 
-        axum::serve(listener, prepared.router)
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            .context("Server error")?;
-
-        Ok(())
+        let prepared = self.prepare_serve(config)?;
+        self.server.serve(prepared.router, config.server.port, &*self.ui).await
     }
 
     pub(crate) fn prepare_serve(&self, config: &Config) -> anyhow::Result<PreparedServe> {
@@ -177,12 +164,12 @@ impl Application {
         rebuild: bool,
         verbose: bool,
     ) -> anyhow::Result<()> {
-        let request = workflows::file_index::FileIndexRequest {
+        let request = index::file_index::FileIndexRequest {
             input_root,
             rebuild,
             verbose,
         };
-        let workflow = workflows::file_index::FileIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
+        let workflow = index::file_index::FileIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
         let outcome = workflow.run(request)?;
         self.emit_outcome(outcome.format_for_ui());
         Ok(())
@@ -195,12 +182,12 @@ impl Application {
         rebuild: bool,
         verbose: bool,
     ) -> anyhow::Result<()> {
-        let request = workflows::git_index::GitIndexRequest {
+        let request = index::git_index::GitIndexRequest {
             repo_path,
             rebuild,
             verbose,
         };
-        let workflow = workflows::git_index::GitIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
+        let workflow = index::git_index::GitIndexWorkflow::new(config, &*self.ui, &*self.embedder_factory);
         let outcome = workflow.run(request)?;
         self.emit_outcome(outcome.format_for_ui());
         Ok(())
@@ -253,6 +240,7 @@ mod tests {
             Box::new(RecordingUi::always_confirm()),
             Box::new(FakeEmbedderFactory),
             Box::new(RealServeIndexAccess),
+            Box::new(TokioHttpServer),
         );
 
         app.run_index(&config, Some(dir.clone()), false, false).unwrap();

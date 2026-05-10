@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::app::workflows::runner;
+use crate::app::index::runner;
 use crate::config::GitConfig;
 use crate::index::{IndexRepository, SourceIndexKind};
 use crate::indexing::unique_doc_count;

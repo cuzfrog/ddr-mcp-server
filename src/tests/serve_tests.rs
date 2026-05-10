@@ -1,6 +1,9 @@
 use std::path::Path;
 
+use async_trait::async_trait;
+
 use crate::app::application::Application;
+use crate::app::serve::server::Server;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::config::{Config, IndexConfig};
 use crate::embedder::{EmbedderFactory, EmbeddingService};
@@ -95,6 +98,24 @@ impl EmbedderFactory for FailingEmbedderFactory {
 }
 
 // ---------------------------------------------------------------------------
+// FakeServer — no-op Server for tests that don't exercise networking
+// ---------------------------------------------------------------------------
+
+struct FakeServer;
+
+#[async_trait]
+impl Server for FakeServer {
+    async fn serve(
+        &self,
+        _router: axum::Router,
+        _port: u16,
+        _ui: &dyn crate::support::ui::WorkflowUi,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helper to build a minimal Config pointing at a temp persist dir
 // ---------------------------------------------------------------------------
 
@@ -144,6 +165,7 @@ fn oversized_index_aborts_when_not_confirmed() {
         Box::new(RecordingUi::never_confirm()),
         Box::new(FakeEmbedderFactory),
         Box::new(FakeServeIndexAccess::new().with_oversized()),
+        Box::new(FakeServer),
     );
 
     let result = app.prepare_serve(&config);
@@ -166,6 +188,7 @@ fn oversized_index_continues_when_confirmed() {
         Box::new(RecordingUi::always_confirm()),
         Box::new(FakeEmbedderFactory),
         Box::new(RealServeIndexAccess),
+        Box::new(FakeServer),
     );
 
     let result = app.prepare_serve(&oversized_config);
@@ -183,6 +206,7 @@ fn merged_index_loading_error_propagates() {
         Box::new(RecordingUi::always_confirm()),
         Box::new(FakeEmbedderFactory),
         Box::new(FakeServeIndexAccess::new().with_load_error()),
+        Box::new(FakeServer),
     );
 
     let result = app.prepare_serve(&config);
@@ -213,6 +237,7 @@ fn embedder_init_error_propagates() {
         Box::new(RecordingUi::always_confirm()),
         Box::new(FailingEmbedderFactory),
         Box::new(FakeServeIndexAccess::new()),
+        Box::new(FakeServer),
     );
 
     let result = app.prepare_serve(&config);
@@ -244,6 +269,7 @@ fn bootstrap_succeeds_with_fake_dependencies() {
         Box::new(RecordingUi::always_confirm()),
         Box::new(FakeEmbedderFactory),
         Box::new(RealServeIndexAccess),
+        Box::new(FakeServer),
     );
 
     let result = app.prepare_serve(&config);

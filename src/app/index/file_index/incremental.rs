@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{FileIndexOutcome, FileIndexRequest, FileIndexWorkflow};
-use crate::app::workflows::runner;
+use crate::app::index::runner;
 use crate::documents::ChunkMetadata;
 use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest, VectorStore};
 use crate::indexing::IndexedBatch;
