@@ -23,7 +23,11 @@ pub trait ServeIndexAccess: Send + Sync {
     ) -> anyhow::Result<LoadMergedResult>;
 }
 
-pub struct RealServeIndexAccess;
+pub fn create_serve_index_access() -> impl ServeIndexAccess {
+    RealServeIndexAccess
+}
+
+struct RealServeIndexAccess;
 
 impl ServeIndexAccess for RealServeIndexAccess {
     fn check_size(

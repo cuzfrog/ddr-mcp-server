@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use crate::app::serve::server::{Server, TokioHttpServer};
-use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
+use crate::app::serve::server::{Server, create_server};
+use crate::app::serve::{ServeIndexAccess, create_serve_index_access};
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
-use crate::index::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
-use crate::support::ui::{Terminal, Console};
+use crate::index::embedder::{list_supported_models, EmbedderFactory, create_embedder_factory};
+use crate::support::ui::{Console, create_console};
 
 pub(crate) mod index;
 pub(crate) mod init;
@@ -20,10 +20,10 @@ pub struct Application {
 impl Default for Application {
     fn default() -> Self {
         Self::new(
-            Box::new(Terminal::new(false)),
-            Box::new(RealEmbedderFactory),
-            Box::new(RealServeIndexAccess),
-            Box::new(TokioHttpServer),
+            Box::new(create_console(false)),
+            Box::new(create_embedder_factory()),
+            Box::new(create_serve_index_access()),
+            Box::new(create_server()),
         )
     }
 }
@@ -139,8 +139,8 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::serve::RealServeIndexAccess;
-    use crate::tests::fixtures::{FakeEmbedderFactory, RecordingUi, make_temp_dir};
+    use crate::app::serve::create_serve_index_access;
+    use crate::tests::fixtures::make_temp_dir;
 
     #[test]
     fn format_supported_models_returns_expected_strings() {
@@ -179,10 +179,10 @@ mod tests {
         };
 
         let app = Application::new(
-            Box::new(RecordingUi::always_confirm()),
-            Box::new(FakeEmbedderFactory),
-            Box::new(RealServeIndexAccess),
-            Box::new(TokioHttpServer),
+            Box::new(create_console(false)),
+            Box::new(create_embedder_factory()),
+            Box::new(create_serve_index_access()),
+            Box::new(create_server()),
         );
 
         app.run_index(&config, Some(dir.clone()), false, false).unwrap();

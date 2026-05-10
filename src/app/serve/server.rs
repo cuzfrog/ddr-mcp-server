@@ -19,7 +19,11 @@ pub trait Server: Send + Sync {
     async fn serve(&self, router: Router, port: u16, ui: &dyn Console) -> anyhow::Result<()>;
 }
 
-pub struct TokioHttpServer;
+pub fn create_server() -> impl Server {
+    TokioHttpServer
+}
+
+struct TokioHttpServer;
 
 #[async_trait]
 impl Server for TokioHttpServer {

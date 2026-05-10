@@ -178,7 +178,11 @@ pub trait EmbedderFactory: Send + Sync {
     fn create(&self, model: &str) -> anyhow::Result<Box<dyn EmbeddingService>>;
 }
 
-pub struct RealEmbedderFactory;
+pub fn create_embedder_factory() -> impl EmbedderFactory {
+    RealEmbedderFactory
+}
+
+struct RealEmbedderFactory;
 
 impl EmbedderFactory for RealEmbedderFactory {
     fn create(&self, model: &str) -> anyhow::Result<Box<dyn EmbeddingService>> {

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::app::serve::server::prepare_serve;
-use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
+use crate::app::serve::{ServeIndexAccess, create_serve_index_access};
 use crate::config::{Config, IndexConfig};
 use crate::index::embedder::{EmbedderFactory, EmbeddingService};
 use crate::index::VectorStore;
@@ -158,11 +158,10 @@ fn oversized_index_continues_when_confirmed() {
     let config = serve_config(&persist);
     let mut oversized_config = config.clone();
     oversized_config.index.max_size_mb = 1;
-    let index_access = RealServeIndexAccess;
     let ui = RecordingUi::always_confirm();
     let factory = FakeEmbedderFactory;
 
-    let result = prepare_serve(&index_access, &factory, &oversized_config, &ui);
+    let result = prepare_serve(&create_serve_index_access(), &factory, &oversized_config, &ui);
     assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
     let _ = std::fs::remove_dir_all(&persist);
@@ -227,11 +226,10 @@ fn bootstrap_succeeds_with_fake_dependencies() {
     let persist = make_temp_dir("serve_bootstrap");
     create_minimal_file_index(&persist);
     let config = serve_config(&persist);
-    let index_access = RealServeIndexAccess;
     let ui = RecordingUi::always_confirm();
     let factory = FakeEmbedderFactory;
 
-    let result = prepare_serve(&index_access, &factory, &config, &ui);
+    let result = prepare_serve(&create_serve_index_access(), &factory, &config, &ui);
     assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
     let _ = std::fs::remove_dir_all(&persist);

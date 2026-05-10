@@ -1,10 +1,6 @@
 use clap::{Parser, Subcommand};
 use docent_mcp::app::Application;
-use docent_mcp::app::serve::server::TokioHttpServer;
-use docent_mcp::app::serve::RealServeIndexAccess;
 use docent_mcp::config::Config;
-use docent_mcp::index::embedder::RealEmbedderFactory;
-use docent_mcp::support::ui::Terminal;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -46,10 +42,10 @@ struct ServeArgs {
 
 fn make_app(verbose: bool) -> Application {
     Application::new(
-        Box::new(Terminal::new(verbose)),
-        Box::new(RealEmbedderFactory),
-        Box::new(RealServeIndexAccess),
-        Box::new(TokioHttpServer),
+        Box::new(docent_mcp::support::ui::create_console(verbose)),
+        Box::new(docent_mcp::index::embedder::create_embedder_factory()),
+        Box::new(docent_mcp::app::serve::create_serve_index_access()),
+        Box::new(docent_mcp::app::serve::server::create_server()),
     )
 }
 

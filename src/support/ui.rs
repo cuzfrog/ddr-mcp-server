@@ -9,14 +9,12 @@ pub trait Console: Send + Sync {
     fn progress(&self, total: u64, label: &str) -> Box<dyn ProgressSink>;
 }
 
-pub struct Terminal {
-    verbose: bool,
+pub fn create_console(verbose: bool) -> impl Console {
+    Terminal { verbose }
 }
 
-impl Terminal {
-    pub fn new(verbose: bool) -> Self {
-        Self { verbose }
-    }
+struct Terminal {
+    verbose: bool,
 }
 
 impl Console for Terminal {
