@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::config::IndexConfig;
 use crate::index::{IndexRepository, IndexSizeInfo, LoadMergedResult};
 
+pub(crate) mod bootstrap;
 pub(crate) mod service_builder;
 
 pub(crate) trait ServeIndexAccess: Send + Sync {

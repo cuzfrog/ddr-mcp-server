@@ -5,6 +5,9 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 
+use crate::app::init;
+use crate::app::serve::bootstrap::PreparedServe;
+use crate::app::serve::bootstrap::shutdown_signal;
 use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::{RealServeIndexAccess, ServeIndexAccess};
 use crate::app::workflows;
@@ -57,7 +60,7 @@ impl Application {
         let target = PathBuf::from("./docent.toml");
         if target.exists() {
             let existing = std::fs::read_to_string(&target)?;
-            let merged = merge_toml(DEFAULT_TEMPLATE, &existing)?;
+            let merged = init::merge_toml(DEFAULT_TEMPLATE, &existing)?;
             std::fs::write(&target, &merged)?;
             self.ui.info(&format!("Merged new config fields into {}", target.display()));
         } else {
@@ -285,22 +288,6 @@ impl Application {
 }
 
 // ---------------------------------------------------------------------------
-// PreparedServe — result of preflight that does not require a TCP listener
-// ---------------------------------------------------------------------------
-
-pub(crate) struct PreparedServe {
-    router: axum::Router,
-}
-
-impl std::fmt::Debug for PreparedServe {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PreparedServe")
-            .field("router", &"axum::Router { ... }")
-            .finish()
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
@@ -319,112 +306,6 @@ fn resolve_input_root(path: &Path) -> anyhow::Result<PathBuf> {
 fn resolve_repo_path(path: &Path) -> anyhow::Result<PathBuf> {
     path.canonicalize()
         .map_err(|_| anyhow::anyhow!("path '{}' does not exist", path.display()))
-}
-
-fn merge_toml(template: &str, existing: &str) -> anyhow::Result<String> {
-    let existing_root: toml::Value = toml::from_str(existing)
-        .map_err(|e| anyhow::anyhow!("Failed to parse existing config: {}", e))?;
-
-    let mut result = template.to_string();
-
-    if let toml::Value::Table(existing_table) = &existing_root {
-        for (section_name, section_value) in existing_table {
-            if let toml::Value::Table(keys) = section_value {
-                for (key, existing_val) in keys {
-                    if let Some(new_result) = replace_value_in_text(&result, section_name, key, existing_val) {
-                        result = new_result;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(result)
-}
-
-fn replace_value_in_text(text: &str, section_name: &str, key: &str, existing_val: &toml::Value) -> Option<String> {
-    let header = format!("[{}]", section_name);
-    let new_val_str = format_toml_inline(existing_val);
-    let mut in_section = false;
-    let mut result = String::new();
-    let mut replaced = false;
-
-    for line in text.lines() {
-        let trimmed = line.trim();
-
-        if !replaced && in_section {
-            if trimmed.starts_with('[') && trimmed.ends_with(']') && !trimmed.starts_with("[[") {
-                in_section = false;
-            } else if let Some(eq_pos) = trimmed.find('=') {
-                let line_key = trimmed[..eq_pos].trim();
-                if line_key == key {
-                    let line_eq_pos = line.find('=').unwrap();
-                    let before_eq = &line[..line_eq_pos + 1];
-                    let after_eq = &line[line_eq_pos + 1..];
-                    let val_body_start = after_eq.find(|c: char| !c.is_whitespace()).unwrap_or(0);
-                    let trailing_after_value = &after_eq[val_body_start..];
-                    let comment_idx = find_comment_start(trailing_after_value);
-                    let new_line = match comment_idx {
-                        Some(ci) => {
-                            let val_content_end = trailing_after_value[..ci].trim_end().len();
-                            let spacing_and_comment = &trailing_after_value[val_content_end..];
-                            format!("{}{}{}{}", before_eq, &after_eq[..val_body_start], new_val_str, spacing_and_comment)
-                        }
-                        None => {
-                            format!("{}{}{}", before_eq, &after_eq[..val_body_start], new_val_str)
-                        }
-                    };
-                    result.push_str(&new_line);
-                    result.push('\n');
-                    replaced = true;
-                    continue;
-                }
-            }
-        }
-
-        if !replaced && trimmed == header.as_str() {
-            in_section = true;
-        }
-
-        result.push_str(line);
-        result.push('\n');
-    }
-
-    if replaced { Some(result) } else { None }
-}
-
-fn find_comment_start(s: &str) -> Option<usize> {
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (i, ch) in s.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '#' if !in_quotes => return Some(i),
-            _ => {}
-        }
-    }
-    None
-}
-
-fn format_toml_inline(val: &toml::Value) -> String {
-    let mut table = toml::value::Table::new();
-    table.insert("_".to_string(), val.clone());
-    let serialized = toml::to_string(&toml::Value::Table(table))
-        .unwrap_or_default();
-    serialized.trim().strip_prefix("_ = ").unwrap_or("").to_string()
-}
-
-async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install Ctrl+C handler");
-    let ui = ConsoleUi;
-    WorkflowUi::info(&ui, "Shutting down...");
 }
 
 #[cfg(test)]
@@ -490,38 +371,6 @@ mod tests {
     fn format_supported_models_empty() {
         let formatted: Vec<String> = vec![];
         assert!(formatted.is_empty());
-    }
-
-    #[test]
-    fn merge_inserts_missing_key_in_correct_section() {
-        let existing = r#"
-[index]
-embedding_model = "BGESmallENV15Q"
-persist_path = "./.docent-index"
-chunk_overlap = 64
-max_size_mb = 512
-"#;
-
-        let merged = merge_toml(DEFAULT_TEMPLATE, existing).unwrap();
-        let index_pos = merged.find("[index]").unwrap();
-        let next_section_pos = merged[index_pos + 1..]
-            .find("\n[")
-            .map(|p| index_pos + 1 + p)
-            .unwrap_or(merged.len());
-        let index_section = &merged[index_pos..next_section_pos];
-
-        assert!(
-            index_section.contains("chunk_size"),
-            "chunk_size should appear inside the [index] section, got:\n{}",
-            merged
-        );
-
-        let after_last_section = &merged[next_section_pos..];
-        assert!(
-            !after_last_section.contains("chunk_size"),
-            "chunk_size should not appear after other sections, got:\n{}",
-            merged
-        );
     }
 
     #[test]
