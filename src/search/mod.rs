@@ -1,10 +1,12 @@
 mod types;
 mod ranking;
 mod fusion;
-pub(crate) mod backend;
+pub mod backend;
+pub(crate) mod builder;
 mod orchestrator;
 pub(crate) use ranking::DecayRanker;
 pub(crate) use fusion::create_fusion;
 pub use backend::{ScoreBackend, VectorScoreBackend};
 pub(crate) use backend::build_bm25_backend;
+pub(crate) use backend::ZeroScoreBackend;
 pub(crate) use orchestrator::HybridSearchService;
