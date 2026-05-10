@@ -23,10 +23,6 @@ pub(crate) trait ServeIndexAccess: Send + Sync {
     ) -> anyhow::Result<LoadMergedResult>;
 }
 
-pub(crate) fn create_serve_index_access() -> impl ServeIndexAccess {
-    ServeIndexAccessImpl
-}
-
 pub(super) struct ServeIndexAccessImpl;
 
 impl ServeIndexAccess for ServeIndexAccessImpl {

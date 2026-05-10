@@ -128,7 +128,7 @@ mod tests {
     };
     use crate::index::VectorStore;
     use crate::tests::fixtures::{
-        make_temp_dir, FakeEmbedder, RecordingUi,
+        make_temp_dir, serve_config_fixture, FakeEmbedder, RecordingUi,
     };
 
     struct FakeServeIndexAccess {
@@ -193,38 +193,7 @@ mod tests {
         }
     }
 
-    fn serve_config(persist_path: &Path) -> Config {
-        Config {
-            index: IndexConfig {
-                embedding_model: "BGESmallENV15Q".to_string(),
-                persist_path: persist_path.to_string_lossy().to_string(),
-                chunk_size: 256,
-                chunk_overlap: 32,
-                max_size_mb: 512,
-            },
-            server: crate::config::ServerConfig {
-                port: 9999,
-                log_level: "info".to_string(),
-            },
-            search: crate::config::SearchConfig {
-                ranking: crate::config::RankingConfig {
-                    same_src_score_decay: 0.9,
-                    file_hint_boost: 1.5,
-                },
-                fusion: crate::config::FusionConfig {
-                    strategy: "rrf".to_string(),
-                    rrf_k: 60.0,
-                    semantic_weight: 0.7,
-                },
-                bm25: crate::config::Bm25Config {
-                    k1: 1.2,
-                    b: 0.75,
-                },
-            },
-            git: None,
-            file: None,
-        }
-    }
+
 
     fn create_minimal_file_index(persist_path: &Path) {
         let config = IndexConfig {
@@ -259,7 +228,7 @@ mod tests {
     #[test]
     fn oversized_index_aborts_when_not_confirmed() {
         let persist = make_temp_dir("serve_oversized_abort");
-        let config = serve_config(&persist);
+        let config = serve_config_fixture(&persist);
         let index_access = FakeServeIndexAccess::new().with_oversized();
         let console = RecordingUi::never_confirm();
 
@@ -275,7 +244,7 @@ mod tests {
     fn oversized_index_continues_when_confirmed() {
         let persist = make_temp_dir("serve_oversized_continue");
         create_minimal_file_index(&persist);
-        let config = serve_config(&persist);
+        let config = serve_config_fixture(&persist);
         let mut oversized_config = config.clone();
         oversized_config.index.max_size_mb = 1;
         let index_access = FakeServeIndexAccess::new().with_oversized();
@@ -290,7 +259,7 @@ mod tests {
     #[test]
     fn merged_index_loading_error_propagates() {
         let persist = make_temp_dir("serve_merge_error");
-        let config = serve_config(&persist);
+        let config = serve_config_fixture(&persist);
         let index_access = FakeServeIndexAccess::new().with_load_error();
         let console = RecordingUi::always_confirm();
 
@@ -317,7 +286,7 @@ mod tests {
     fn bootstrap_succeeds_with_fake_dependencies() {
         let persist = make_temp_dir("serve_bootstrap");
         create_minimal_file_index(&persist);
-        let config = serve_config(&persist);
+        let config = serve_config_fixture(&persist);
         let index_access = FakeServeIndexAccess::new();
         let console = RecordingUi::always_confirm();
 

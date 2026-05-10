@@ -140,7 +140,7 @@ impl Application {
 mod tests {
     use super::*;
     use crate::app::serve::server::create_server;
-    use crate::tests::fixtures::make_temp_dir;
+    use crate::tests::fixtures::{make_temp_dir, serve_config_fixture};
 
     #[test]
     fn format_supported_models_returns_expected_strings() {
@@ -163,20 +163,14 @@ mod tests {
     #[test]
     fn run_index_skips_both_when_file_disabled_and_git_absent() {
         let dir = make_temp_dir("app_index_both_skip");
-
-        let config = Config {
-            index: crate::config::IndexConfig {
-                embedding_model: "BGESmallENV15Q".to_string(),
-                ..Default::default()
-            },
-            file: Some(crate::config::FileConfig {
-                enabled: false,
-                glob_patterns: vec![],
-                file_size_limit_mb: 0,
-            }),
-            git: None,
-            ..Default::default()
-        };
+        let mut config = serve_config_fixture(&dir);
+        config.index.embedding_model = "BGESmallENV15Q".to_string();
+        config.file = Some(crate::config::FileConfig {
+            enabled: false,
+            glob_patterns: vec![],
+            file_size_limit_mb: 0,
+        });
+        config.git = None;
 
         let app = Application::new(
             Box::new(crate::support::ui::create_console(false)),

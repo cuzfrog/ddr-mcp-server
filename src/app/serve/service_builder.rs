@@ -76,12 +76,31 @@ impl HybridServiceBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::config::{SearchConfig, FusionConfig, RankingConfig, Bm25Config};
     use crate::domain::{ChunkKind, ChunkMetadata, DocumentContext};
     use crate::index::MergedIndex;
     use crate::index::VectorStore;
     use crate::mcp::search::SearchService;
     use crate::tests::fixtures::FakeEmbedder;
+
+    fn default_search_config() -> SearchConfig {
+        SearchConfig {
+            ranking: RankingConfig {
+                same_src_score_decay: 0.9,
+                file_hint_boost: 1.5,
+            },
+            fusion: FusionConfig {
+                strategy: "rrf".to_string(),
+                rrf_k: 60.0,
+                semantic_weight: 0.7,
+            },
+            bm25: Bm25Config {
+                k1: 1.2,
+                b: 0.75,
+            },
+        }
+    }
+
     #[test]
     fn test_build_embedder_error() {
         let builder = HybridServiceBuilder;
@@ -106,12 +125,12 @@ mod tests {
         };
         let embedder: Arc<Mutex<dyn Embedder>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
-        let config = Config::default();
+        let search_config = default_search_config();
         let builder = HybridServiceBuilder;
         let result = builder.build(
             merged,
             embedder,
-            &config.search,
+            &search_config,
         );
         assert!(result.is_ok());
     }
@@ -164,13 +183,13 @@ mod tests {
 
         let embedder: Arc<Mutex<dyn Embedder>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
-        let config = Config::default();
+        let search_config = default_search_config();
         let builder = HybridServiceBuilder;
 
         let search_service = builder.build(
             merged,
             embedder,
-            &config.search,
+            &search_config,
         )?;
 
         let results = search_service.search("apples", 5, "").await?;
