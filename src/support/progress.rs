@@ -10,13 +10,13 @@ pub trait ProgressSink: Send {
     fn finish(&self);
 }
 
-pub struct Progress {
+pub(crate) struct Progress {
     pb: ProgressBar,
     verbose: bool,
 }
 
 impl Progress {
-    pub fn new(total: u64, label: &str, verbose: bool) -> Self {
+    pub(crate) fn new(total: u64, label: &str, verbose: bool) -> Self {
         let pb = ProgressBar::new(total);
         let template: String = if verbose {
             format!("  {{wide_msg}}  {label}: {{pos}}/{{len}}")
@@ -30,18 +30,18 @@ impl Progress {
         Progress { pb, verbose }
     }
 
-    pub fn tick(&self, n: u64) {
+    pub(crate) fn tick(&self, n: u64) {
         self.pb.inc(n);
     }
 
-    pub fn tick_msg(&self, msg: impl std::fmt::Display) {
+    pub(crate) fn tick_msg(&self, msg: impl std::fmt::Display) {
         if self.verbose {
             self.pb.println(msg.to_string());
         }
         self.pb.inc(1);
     }
 
-    pub fn finish(&self) {
+    pub(crate) fn finish(&self) {
         self.pb.finish_and_clear();
     }
 }

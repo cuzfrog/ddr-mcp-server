@@ -81,7 +81,7 @@ pub trait GitIndexer: Send + Sync {
     ) -> anyhow::Result<GitIndexOutcome>;
 }
 
-pub struct GitIndexerImpl {
+pub(crate) struct GitIndexerImpl {
     pub console: Box<dyn Console>,
 }
 

@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn incremental_returns_needs_rebuild_on_header_mismatch() {
         let persist = make_temp_dir("wf_inc_rebuild_needed");
-        let (ic, fc) = file_config(&persist);
+        let (ic, _fc) = file_config(&persist);
         std::fs::create_dir_all(persist.join("file")).unwrap();
         create_index_at(&persist, &ic);
         {

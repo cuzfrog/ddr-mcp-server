@@ -72,7 +72,7 @@ pub trait FileIndexer: Send + Sync {
     ) -> anyhow::Result<FileIndexOutcome>;
 }
 
-pub struct FileIndexerImpl {
+pub(crate) struct FileIndexerImpl {
     pub console: Box<dyn Console>,
 }
 

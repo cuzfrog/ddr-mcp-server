@@ -7,7 +7,7 @@ pub mod bootstrap;
 pub(crate) mod service_builder;
 pub mod server;
 
-pub trait ServeIndexAccess: Send + Sync {
+pub(crate) trait ServeIndexAccess: Send + Sync {
     fn check_size(
         &self,
         persist_path: &Path,
@@ -23,7 +23,7 @@ pub trait ServeIndexAccess: Send + Sync {
     ) -> anyhow::Result<LoadMergedResult>;
 }
 
-pub fn create_serve_index_access() -> impl ServeIndexAccess {
+pub(crate) fn create_serve_index_access() -> impl ServeIndexAccess {
     ServeIndexAccessImpl
 }
 

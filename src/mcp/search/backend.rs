@@ -23,7 +23,7 @@ pub struct VectorScoreBackend {
 }
 
 impl VectorScoreBackend {
-    pub fn new(
+    pub(crate) fn new(
         embedder: Arc<Mutex<dyn Embedder>>,
         vectors: Arc<VectorStore>,
     ) -> Self {
