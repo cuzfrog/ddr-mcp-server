@@ -7,6 +7,7 @@ use rmcp::transport::streamable_http_server::{
 
 use crate::app::serve::service_builder::HybridServiceBuilder;
 use crate::app::serve::ServeIndexAccess;
+use crate::app::serve::ServeIndexAccessImpl;
 use crate::config::Config;
 use crate::mcp::DocentMcpServer;
 use crate::mcp::SearchExecutor;
@@ -21,13 +22,11 @@ pub trait Server: Send + Sync {
     ) -> anyhow::Result<()>;
 }
 
-pub fn create_server(index_access: impl ServeIndexAccess + 'static) -> impl Server {
-    TokioHttpServer { index_access: Box::new(index_access) }
+pub fn create_server() -> impl Server {
+    TokioHttpServer
 }
 
-struct TokioHttpServer {
-    index_access: Box<dyn ServeIndexAccess>,
-}
+struct TokioHttpServer;
 
 #[async_trait]
 impl Server for TokioHttpServer {
@@ -36,7 +35,8 @@ impl Server for TokioHttpServer {
         config: &Config,
         console: &dyn Console,
     ) -> anyhow::Result<()> {
-        let router = prepare_router(&*self.index_access, config, console)?;
+        let index_access = ServeIndexAccessImpl;
+        let router = prepare_router(&index_access, config, console)?;
 
         let addr = format!("127.0.0.1:{}", config.server.port);
         let listener = tokio::net::TcpListener::bind(&addr)

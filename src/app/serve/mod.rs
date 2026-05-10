@@ -27,7 +27,7 @@ pub fn create_serve_index_access() -> impl ServeIndexAccess {
     ServeIndexAccessImpl
 }
 
-struct ServeIndexAccessImpl;
+pub(super) struct ServeIndexAccessImpl;
 
 impl ServeIndexAccess for ServeIndexAccessImpl {
     fn check_size(

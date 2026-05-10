@@ -78,6 +78,10 @@ pub struct GitIndexerImpl {
     pub console: Box<dyn Console>,
 }
 
+pub fn create_git_indexer(console: Box<dyn Console>) -> impl GitIndexer {
+    GitIndexerImpl { console }
+}
+
 impl GitIndexer for GitIndexerImpl {
     fn run(&self, config: &Config, request: GitIndexRequest) -> anyhow::Result<GitIndexOutcome> {
         let git_config = config.git.as_ref().ok_or_else(|| {

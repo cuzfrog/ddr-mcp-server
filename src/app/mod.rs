@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use crate::app::index::file::{FileIndexer, FileIndexerImpl};
-use crate::app::index::git::{GitIndexer, GitIndexerImpl};
+use crate::app::index::file::FileIndexer;
+use crate::app::index::git::GitIndexer;
 use crate::app::serve::server::{Server, create_server};
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::index::embedder::list_supported_models;
-use crate::support::ui::{Console, create_console};
+use crate::support::ui::Console;
 
 pub mod index;
 pub(crate) mod init;
@@ -16,21 +16,6 @@ pub struct Application {
     server: Box<dyn Server>,
     file_indexer: Box<dyn FileIndexer>,
     git_indexer: Box<dyn GitIndexer>,
-}
-
-impl Default for Application {
-    fn default() -> Self {
-        Self::new(
-            Box::new(create_console(false)),
-            Box::new(create_server(crate::app::serve::create_serve_index_access())),
-            Box::new(FileIndexerImpl {
-                console: Box::new(create_console(false)),
-            }),
-            Box::new(GitIndexerImpl {
-                console: Box::new(create_console(false)),
-            }),
-        )
-    }
 }
 
 impl Application {
@@ -136,7 +121,6 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::serve::create_serve_index_access;
     use crate::tests::fixtures::make_temp_dir;
 
     #[test]
@@ -176,14 +160,14 @@ mod tests {
         };
 
         let app = Application::new(
-            Box::new(create_console(false)),
-            Box::new(create_server(create_serve_index_access())),
-            Box::new(FileIndexerImpl {
-                console: Box::new(create_console(false)),
-            }),
-            Box::new(GitIndexerImpl {
-                console: Box::new(create_console(false)),
-            }),
+            Box::new(crate::support::ui::create_console(false)),
+            Box::new(create_server()),
+            Box::new(crate::app::index::file::create_file_indexer(
+                Box::new(crate::support::ui::create_console(false)),
+            )),
+            Box::new(crate::app::index::git::create_git_indexer(
+                Box::new(crate::support::ui::create_console(false)),
+            )),
         );
 
         app.run_index(&config, Some(dir.clone()), false, false).unwrap();

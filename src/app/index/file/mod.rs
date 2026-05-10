@@ -69,6 +69,10 @@ pub struct FileIndexerImpl {
     pub console: Box<dyn Console>,
 }
 
+pub fn create_file_indexer(console: Box<dyn Console>) -> impl FileIndexer {
+    FileIndexerImpl { console }
+}
+
 impl FileIndexer for FileIndexerImpl {
     fn run(&self, config: &Config, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
         if request.rebuild {

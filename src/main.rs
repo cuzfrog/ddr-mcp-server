@@ -43,15 +43,13 @@ struct ServeArgs {
 fn make_app(verbose: bool) -> Application {
     Application::new(
         Box::new(docent_mcp::support::ui::create_console(verbose)),
-        Box::new(docent_mcp::app::serve::server::create_server(
-            docent_mcp::app::serve::create_serve_index_access(),
+        Box::new(docent_mcp::app::serve::server::create_server()),
+        Box::new(docent_mcp::app::index::file::create_file_indexer(
+            Box::new(docent_mcp::support::ui::create_console(verbose)),
         )),
-        Box::new(docent_mcp::app::index::file::FileIndexerImpl {
-            console: Box::new(docent_mcp::support::ui::create_console(verbose)),
-        }),
-        Box::new(docent_mcp::app::index::git::GitIndexerImpl {
-            console: Box::new(docent_mcp::support::ui::create_console(verbose)),
-        }),
+        Box::new(docent_mcp::app::index::git::create_git_indexer(
+            Box::new(docent_mcp::support::ui::create_console(verbose)),
+        )),
     )
 }
 
