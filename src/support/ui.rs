@@ -6,7 +6,7 @@ use std::io::Write;
 // WorkflowUi — abstract user-interaction interface for workflows
 // ---------------------------------------------------------------------------
 
-pub(crate) trait WorkflowUi: Send + Sync {
+pub trait WorkflowUi: Send + Sync {
     fn info(&self, msg: &str);
     fn warn(&self, msg: &str);
     fn confirm(&self, prompt: &str) -> anyhow::Result<bool>;
@@ -17,7 +17,7 @@ pub(crate) trait WorkflowUi: Send + Sync {
 // ConsoleUi — production implementation that delegates to terminal/progress
 // ---------------------------------------------------------------------------
 
-pub(crate) struct ConsoleUi;
+pub struct ConsoleUi;
 
 impl WorkflowUi for ConsoleUi {
     fn info(&self, msg: &str) {

@@ -65,7 +65,7 @@ fn process_commit(
             println!("  {msg}");
         }
     } else if let Some(p) = progress {
-        p.tick();
+        p.tick(1);
     }
 
     let commit_tree = commit.tree()?;

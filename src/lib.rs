@@ -13,7 +13,7 @@ pub(crate) mod sources;
 pub mod indexing;
 pub(crate) mod interfaces;
 pub mod search;
-pub(crate) mod support;
+pub mod support;
 pub(crate) mod ui;
 
 #[cfg(test)]

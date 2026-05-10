@@ -3,10 +3,10 @@ use std::path::Path;
 use crate::config::IndexConfig;
 use crate::index::{IndexRepository, IndexSizeInfo, LoadMergedResult};
 
-pub(crate) mod bootstrap;
+pub mod bootstrap;
 pub(crate) mod service_builder;
 
-pub(crate) trait ServeIndexAccess: Send + Sync {
+pub trait ServeIndexAccess: Send + Sync {
     fn check_size(
         &self,
         persist_path: &Path,
@@ -22,7 +22,7 @@ pub(crate) trait ServeIndexAccess: Send + Sync {
     ) -> anyhow::Result<LoadMergedResult>;
 }
 
-pub(crate) struct RealServeIndexAccess;
+pub struct RealServeIndexAccess;
 
 impl ServeIndexAccess for RealServeIndexAccess {
     fn check_size(

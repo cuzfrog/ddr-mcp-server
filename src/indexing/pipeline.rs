@@ -46,7 +46,7 @@ impl IndexingPipeline {
                 .embed(batch)
                 .map_err(|e| anyhow::anyhow!("Embedding operation failed: {}", e))?;
             if let Some(p) = progress {
-                p.tick_n(batch_size);
+                p.tick(batch_size);
             }
             all_vectors.extend(vectors);
         }
@@ -108,7 +108,7 @@ impl IndexingPipeline {
             .collect();
 
         if let Some(p) = progress {
-            p.tick_n(doc_chunk_progress.load(Ordering::Relaxed));
+            p.tick(doc_chunk_progress.load(Ordering::Relaxed));
         }
 
         let mut all_chunks: Vec<(usize, Chunk)> = Vec::new();

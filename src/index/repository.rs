@@ -10,7 +10,7 @@ use crate::index::vector_store::VectorStore;
 use crate::index::SourceIndexKind;
 use crate::indexing::{Bm25IndexBuilder, IndexedBatch, unique_doc_count};
 
-pub(crate) struct MergedIndex {
+pub struct MergedIndex {
     pub vectors: VectorStore,
     pub metadata: Vec<ChunkMetadata>,
     pub bm25_embeddings: Option<Vec<bm25::Embedding<u32>>>,
@@ -18,13 +18,13 @@ pub(crate) struct MergedIndex {
     pub built_at: String,
 }
 
-pub(crate) struct IndexSizeInfo {
+pub struct IndexSizeInfo {
     pub total_bytes: u64,
     pub file_bytes: u64,
     pub git_bytes: u64,
 }
 
-pub(crate) struct LoadMergedResult {
+pub struct LoadMergedResult {
     pub merged: MergedIndex,
     pub notices: Vec<String>,
 }

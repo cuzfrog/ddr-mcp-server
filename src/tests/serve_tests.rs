@@ -140,10 +140,11 @@ fn oversized_index_aborts_when_not_confirmed() {
     let persist = make_temp_dir("serve_oversized_abort");
     let config = serve_config(&persist);
 
-    let app = Application::new()
-        .with_ui(Box::new(RecordingUi::never_confirm()))
-        .with_embedder_factory(Box::new(FakeEmbedderFactory))
-        .with_index_access(Box::new(FakeServeIndexAccess::new().with_oversized()));
+    let app = Application::new(
+        Box::new(RecordingUi::never_confirm()),
+        Box::new(FakeEmbedderFactory),
+        Box::new(FakeServeIndexAccess::new().with_oversized()),
+    );
 
     let result = app.prepare_serve(&config);
     assert!(result.is_err());
@@ -161,10 +162,11 @@ fn oversized_index_continues_when_confirmed() {
     let mut oversized_config = config.clone();
     oversized_config.index.max_size_mb = 1;
 
-    let app = Application::new()
-        .with_ui(Box::new(RecordingUi::always_confirm()))
-        .with_embedder_factory(Box::new(FakeEmbedderFactory))
-        .with_index_access(Box::new(RealServeIndexAccess));
+    let app = Application::new(
+        Box::new(RecordingUi::always_confirm()),
+        Box::new(FakeEmbedderFactory),
+        Box::new(RealServeIndexAccess),
+    );
 
     let result = app.prepare_serve(&oversized_config);
     assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
@@ -177,10 +179,11 @@ fn merged_index_loading_error_propagates() {
     let persist = make_temp_dir("serve_merge_error");
     let config = serve_config(&persist);
 
-    let app = Application::new()
-        .with_ui(Box::new(RecordingUi::always_confirm()))
-        .with_embedder_factory(Box::new(FakeEmbedderFactory))
-        .with_index_access(Box::new(FakeServeIndexAccess::new().with_load_error()));
+    let app = Application::new(
+        Box::new(RecordingUi::always_confirm()),
+        Box::new(FakeEmbedderFactory),
+        Box::new(FakeServeIndexAccess::new().with_load_error()),
+    );
 
     let result = app.prepare_serve(&config);
     assert!(result.is_err());
@@ -206,10 +209,11 @@ fn embedder_init_error_propagates() {
     let persist = make_temp_dir("serve_embedder_error");
     let config = serve_config(&persist);
 
-    let app = Application::new()
-        .with_ui(Box::new(RecordingUi::always_confirm()))
-        .with_embedder_factory(Box::new(FailingEmbedderFactory))
-        .with_index_access(Box::new(FakeServeIndexAccess::new()));
+    let app = Application::new(
+        Box::new(RecordingUi::always_confirm()),
+        Box::new(FailingEmbedderFactory),
+        Box::new(FakeServeIndexAccess::new()),
+    );
 
     let result = app.prepare_serve(&config);
     assert!(result.is_err());
@@ -236,10 +240,11 @@ fn bootstrap_succeeds_with_fake_dependencies() {
     create_minimal_file_index(&persist);
     let config = serve_config(&persist);
 
-    let app = Application::new()
-        .with_ui(Box::new(RecordingUi::always_confirm()))
-        .with_embedder_factory(Box::new(FakeEmbedderFactory))
-        .with_index_access(Box::new(RealServeIndexAccess));
+    let app = Application::new(
+        Box::new(RecordingUi::always_confirm()),
+        Box::new(FakeEmbedderFactory),
+        Box::new(RealServeIndexAccess),
+    );
 
     let result = app.prepare_serve(&config);
     assert!(result.is_ok(), "Expected success, got: {:?}", result.err());

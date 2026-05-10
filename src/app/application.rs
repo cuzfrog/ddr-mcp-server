@@ -15,16 +15,7 @@ use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::embedder::{list_supported_models, EmbedderFactory, RealEmbedderFactory};
 use crate::interfaces::mcp::DocentMcpServer;
 use crate::interfaces::search_tool::SearchExecutor;
-use crate::support::fs;
 use crate::support::ui::{ConsoleUi, WorkflowUi};
-
-#[derive(Clone)]
-pub struct IndexRunRequest {
-    pub input_path: Option<PathBuf>,
-    pub config_path: PathBuf,
-    pub rebuild: bool,
-    pub verbose: bool,
-}
 
 pub struct Application {
     ui: Box<dyn WorkflowUi>,
@@ -34,35 +25,21 @@ pub struct Application {
 
 impl Default for Application {
     fn default() -> Self {
-        Self::new()
+        Self::new(
+            Box::new(ConsoleUi),
+            Box::new(RealEmbedderFactory),
+            Box::new(RealServeIndexAccess),
+        )
     }
 }
 
 impl Application {
-    pub fn new() -> Self {
-        Self {
-            ui: Box::new(ConsoleUi),
-            embedder_factory: Box::new(RealEmbedderFactory),
-            index_access: Box::new(RealServeIndexAccess),
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_ui(mut self, ui: Box<dyn WorkflowUi>) -> Self {
-        self.ui = ui;
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_embedder_factory(mut self, factory: Box<dyn EmbedderFactory>) -> Self {
-        self.embedder_factory = factory;
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_index_access(mut self, access: Box<dyn ServeIndexAccess>) -> Self {
-        self.index_access = access;
-        self
+    pub fn new(
+        ui: Box<dyn WorkflowUi>,
+        embedder_factory: Box<dyn EmbedderFactory>,
+        index_access: Box<dyn ServeIndexAccess>,
+    ) -> Self {
+        Self { ui, embedder_factory, index_access }
     }
 
     pub fn run_init(&self) -> anyhow::Result<()> {
@@ -87,50 +64,30 @@ impl Application {
 
     pub fn run_index(
         &self,
-        req: &IndexRunRequest,
+        config: &Config,
+        input_path: Option<PathBuf>,
+        rebuild: bool,
+        verbose: bool,
     ) -> anyhow::Result<()> {
-        let config = Config::load(&req.config_path)?;
-        let dir = req.input_path.clone().unwrap_or_else(|| PathBuf::from("."));
+        let dir = input_path.unwrap_or_else(|| PathBuf::from("."));
         let dir = dir.canonicalize()?;
 
         let file_enabled = config.file.as_ref().map(|f| f.enabled).unwrap_or(true);
         if file_enabled {
-            self.run_file_index_workflow(&config, dir.clone(), req.rebuild, req.verbose)?;
+            self.run_file_index_workflow(config, dir.clone(), rebuild, verbose)?;
         }
 
         let git_enabled = config.git.as_ref().map(|g| g.enabled).unwrap_or(false);
         if git_enabled {
-            self.run_git_index_workflow(&config, dir, req.rebuild, req.verbose)?;
+            self.run_git_index_workflow(config, dir, rebuild, verbose)?;
         }
 
         Ok(())
     }
 
-    pub fn run_index_file(
-        &self,
-        req: &IndexRunRequest,
-    ) -> anyhow::Result<()> {
-        let config = Config::load(&req.config_path)?;
-        let path = req.input_path.clone().unwrap_or_else(|| PathBuf::from("."));
-        let input_root = fs::resolve_input_root(&path)?;
-        self.run_file_index_workflow(&config, input_root, req.rebuild, req.verbose)
-    }
+    pub async fn run_serve(&self, config: &Config) -> anyhow::Result<()> {
 
-    pub fn run_index_git(
-        &self,
-        req: &IndexRunRequest,
-    ) -> anyhow::Result<()> {
-        let config = Config::load(&req.config_path)?;
-        let path = req.input_path.clone().unwrap_or_else(|| PathBuf::from("."));
-        let repo_path = fs::resolve_repo_root(&path)?;
-        self.run_git_index_workflow(&config, repo_path, req.rebuild, req.verbose)
-    }
-
-    pub async fn run_serve(&self, config_path: &std::path::Path) -> anyhow::Result<()> {
-        let config = Config::load(config_path)
-            .context("Failed to load config — cannot start server")?;
-
-        let prepared = self.prepare_serve(&config)?;
+        let prepared = self.prepare_serve(config)?;
 
         let addr = format!("127.0.0.1:{}", config.server.port);
         let listener = tokio::net::TcpListener::bind(&addr)
@@ -253,7 +210,8 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::fixtures::make_temp_dir;
+    use crate::app::serve::RealServeIndexAccess;
+    use crate::tests::fixtures::{FakeEmbedderFactory, RecordingUi, make_temp_dir};
 
     #[test]
     fn format_supported_models_returns_expected_strings() {
@@ -275,27 +233,29 @@ mod tests {
 
     #[test]
     fn run_index_skips_both_when_file_disabled_and_git_absent() {
-        use crate::tests::fixtures::{FakeEmbedderFactory, RecordingUi};
         let dir = make_temp_dir("app_index_both_skip");
-        let config_path = dir.join("docent.toml");
-        std::fs::write(&config_path, r#"
-[index]
-embedding_model = "BGESmallENV15Q"
 
-[file]
-enabled = false
-"#).unwrap();
+        let config = Config {
+            index: crate::config::IndexConfig {
+                embedding_model: "BGESmallENV15Q".to_string(),
+                ..Default::default()
+            },
+            file: Some(crate::config::FileConfig {
+                enabled: false,
+                glob_patterns: vec![],
+                file_size_limit_mb: 0,
+            }),
+            git: None,
+            ..Default::default()
+        };
 
-        let app = Application::new()
-            .with_ui(Box::new(RecordingUi::always_confirm()))
-            .with_embedder_factory(Box::new(FakeEmbedderFactory));
+        let app = Application::new(
+            Box::new(RecordingUi::always_confirm()),
+            Box::new(FakeEmbedderFactory),
+            Box::new(RealServeIndexAccess),
+        );
 
-        app.run_index(&IndexRunRequest {
-            input_path: Some(dir.clone()),
-            config_path: config_path.clone(),
-            rebuild: false,
-            verbose: false,
-        }).unwrap();
+        app.run_index(&config, Some(dir.clone()), false, false).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -174,11 +174,11 @@ impl EmbeddingService for Box<dyn EmbeddingService> {
 // EmbedderFactory — abstraction over embedder construction
 // ---------------------------------------------------------------------------
 
-pub(crate) trait EmbedderFactory: Send + Sync {
+pub trait EmbedderFactory: Send + Sync {
     fn create(&self, model: &str) -> anyhow::Result<Box<dyn EmbeddingService>>;
 }
 
-pub(crate) struct RealEmbedderFactory;
+pub struct RealEmbedderFactory;
 
 impl EmbedderFactory for RealEmbedderFactory {
     fn create(&self, model: &str) -> anyhow::Result<Box<dyn EmbeddingService>> {
