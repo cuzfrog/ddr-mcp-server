@@ -1,7 +1,7 @@
 use crate::index::schema::{IndexHeader, StoredChunkMetadata, StoredIndex, VectorStore};
 use std::path::Path;
 
-/// Write the index directory: `header.json`, `vectors.bin`, and `metadata.json`.
+/// Write the index directory: `header.json`, `vectors.bin`, and `metadata.bin`.
 ///
 /// Creates `path` (and any missing parents) if it does not exist (`create_dir_all`
 /// is idempotent).  Does **not** validate that `vectors.len()` equals
@@ -374,7 +374,7 @@ mod tests {
         let metadata_bytes = bincode::serialize(&metadata).unwrap();
         std::fs::write(temp_dir.join("metadata.bin"), &metadata_bytes).unwrap();
 
-        std::fs::write(temp_dir.join("vectors.bin"), &[0u8; 8]).unwrap();
+        std::fs::write(temp_dir.join("vectors.bin"), [0u8; 8]).unwrap();
 
         let result = read_index(&temp_dir);
         assert!(result.is_err());
@@ -440,7 +440,7 @@ mod tests {
         let metadata_bytes = bincode::serialize(&metadata).unwrap();
         std::fs::write(temp_dir.join("metadata.bin"), &metadata_bytes).unwrap();
 
-        std::fs::write(temp_dir.join("vectors.bin"), &[0u8; 60]).unwrap();
+        std::fs::write(temp_dir.join("vectors.bin"), [0u8; 60]).unwrap();
 
         let result = read_index(&temp_dir);
         assert!(result.is_err());

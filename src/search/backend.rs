@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::embedder::EmbeddingService;
+use crate::index::VectorStore;
 
 // ---------------------------------------------------------------------------
 // ScoreBackend trait — a backend that scores every chunk against a query
@@ -8,7 +9,7 @@ use crate::embedder::EmbeddingService;
 
 /// A backend that produces one `f32` score per chunk for a given query string.
 /// The output vector has length equal to the number of chunks in the index.
-pub(crate) trait ScoreBackend: Send + Sync {
+pub trait ScoreBackend: Send + Sync {
     fn score(&self, query: &str) -> anyhow::Result<Vec<f32>>;
 }
 
@@ -16,15 +17,15 @@ pub(crate) trait ScoreBackend: Send + Sync {
 // VectorScoreBackend — cosine similarity against dense embeddings
 // ---------------------------------------------------------------------------
 
-pub(crate) struct VectorScoreBackend {
+pub struct VectorScoreBackend {
     embedder: Arc<Mutex<dyn EmbeddingService>>,
-    vectors: Arc<Vec<Vec<f32>>>,
+    vectors: Arc<VectorStore>,
 }
 
 impl VectorScoreBackend {
-    pub(crate) fn new(
+    pub fn new(
         embedder: Arc<Mutex<dyn EmbeddingService>>,
-        vectors: Arc<Vec<Vec<f32>>>,
+        vectors: Arc<VectorStore>,
     ) -> Self {
         Self { embedder, vectors }
     }
@@ -43,10 +44,8 @@ impl ScoreBackend for VectorScoreBackend {
             .next()
             .ok_or_else(|| anyhow::anyhow!("Embedder returned no vectors for query"))?;
 
-        let scores: Vec<f32> = self
-            .vectors
-            .iter()
-            .map(|v| cosine_similarity(&query_vector, v))
+        let scores: Vec<f32> = (0..self.vectors.len())
+            .map(|i| cosine_similarity(&query_vector, self.vectors.get(i)))
             .collect();
 
         Ok(scores)
@@ -135,11 +134,14 @@ mod tests {
     fn test_vector_backend_scores_descending() {
         let embedder: Arc<Mutex<dyn EmbeddingService>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
-        let vectors = Arc::new(vec![
-            vec![9.0, 2.0, 0.0, 1.0],  // parallel to query embedding → cos = 1.0
-            vec![5.0, 2.0, 0.0, 1.0],  // moderate similarity
-            vec![1.0, 2.0, 0.0, 1.0],  // lowest similarity
-        ]);
+        let vectors = Arc::new(
+            VectorStore::from_vec_vec(vec![
+                vec![9.0, 2.0, 0.0, 1.0],  // parallel to query embedding → cos = 1.0
+                vec![5.0, 2.0, 0.0, 1.0],  // moderate similarity
+                vec![1.0, 2.0, 0.0, 1.0],  // lowest similarity
+            ])
+            .unwrap(),
+        );
         let backend = VectorScoreBackend::new(embedder, vectors);
         let scores = backend.score("some text").unwrap();
         assert_eq!(scores.len(), 3);
@@ -153,7 +155,7 @@ mod tests {
     fn test_vector_backend_empty_vectors() {
         let embedder: Arc<Mutex<dyn EmbeddingService>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
-        let vectors = Arc::new(vec![]);
+        let vectors = Arc::new(VectorStore::from_vec_vec(vec![]).unwrap());
         let backend = VectorScoreBackend::new(embedder, vectors);
         let scores = backend.score("anything").unwrap();
         assert!(scores.is_empty());

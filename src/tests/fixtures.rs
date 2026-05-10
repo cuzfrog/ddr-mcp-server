@@ -20,23 +20,6 @@ pub fn make_temp_dir(name: &str) -> PathBuf {
     path
 }
 
-/// Write a `docent.toml` with the given persist path and reasonable defaults.
-#[allow(dead_code)]
-pub fn write_config(dir: &std::path::Path, persist_path: &std::path::Path) -> PathBuf {
-    let config_path = dir.join("docent.toml");
-    let content = format!(
-        r#"[index]
-embedding_model = "BGESmallENV15Q"
-persist_path = "{}"
-chunk_size = 512
-chunk_overlap = 64
-"#,
-        persist_path.to_string_lossy()
-    );
-    std::fs::write(&config_path, content).unwrap();
-    config_path
-}
-
 /// Read an index from disk, returning header, vectors, and metadata.
 pub fn read_index_at(
     path: &std::path::Path,
