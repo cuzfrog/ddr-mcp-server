@@ -9,23 +9,48 @@ use crate::sources::file::FileIndexer;
 
 type ExistingIndex = (HashMap<String, String>, Vec<ChunkMetadata>, VectorStore, bool);
 
+#[derive(Debug)]
+enum IndexLoadError {
+    NeedsRebuild(String),
+    NotFound,
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for IndexLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IndexLoadError::NeedsRebuild(reason) => write!(f, "{}", reason),
+            IndexLoadError::NotFound => write!(f, "no index found"),
+            IndexLoadError::Other(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for IndexLoadError {}
+
+impl From<anyhow::Error> for IndexLoadError {
+    fn from(e: anyhow::Error) -> Self {
+        IndexLoadError::Other(e)
+    }
+}
+
 impl<'a> FileIndexWorkflow<'a> {
-    fn load_existing_index(&self) -> anyhow::Result<ExistingIndex> {
+    fn load_existing_index(&self) -> Result<ExistingIndex, IndexLoadError> {
         let repo = IndexRepository::new(&self.config.persist_path_buf(), &self.config.index);
         match repo.load_one(SourceIndexKind::File) {
             Ok(stored) => {
                 if let Err(e) = stored.header.validate_against(&self.config.index) {
                     self.ui.warn(&format!("{}", e));
-                    anyhow::bail!("needs_rebuild:{}", e);
+                    return Err(IndexLoadError::NeedsRebuild(format!("{}", e)));
                 }
                 let old_hashes = FileIndexer::extract_old_hashes(&stored.metadata);
                 Ok((old_hashes, stored.metadata, stored.vectors, true))
             }
             Err(e) => {
                 if e.to_string().contains("no index found") {
-                    Ok(                (HashMap::new(), vec![], VectorStore::from_vec_vec(vec![])?, false))
+                    Err(IndexLoadError::NotFound)
                 } else {
-                    Err(e)
+                    Err(e.into())
                 }
             }
         }
@@ -59,18 +84,15 @@ impl<'a> FileIndexWorkflow<'a> {
 
         let (old_hashes, old_metadata, old_vectors, index_exists) = match self.load_existing_index() {
             Ok(v) => v,
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.starts_with("needs_rebuild:") {
-                    return Ok(FileIndexOutcome::NeedsRebuild {
-                        reason: format!("{} Run with --rebuild to re-index.", msg.strip_prefix("needs_rebuild:").unwrap_or(&msg)),
-                    });
-                }
-                if !msg.contains("no index found") {
-                    return Err(e);
-                }
-                    (HashMap::new(), vec![], VectorStore::from_vec_vec(vec![])?, false)
+            Err(IndexLoadError::NeedsRebuild(reason)) => {
+                return Ok(FileIndexOutcome::NeedsRebuild {
+                    reason: format!("{} Run with --rebuild to re-index.", reason),
+                });
             }
+            Err(IndexLoadError::NotFound) => {
+                (HashMap::new(), vec![], VectorStore::from_vec_vec(vec![])?, false)
+            }
+            Err(IndexLoadError::Other(e)) => return Err(e),
         };
 
         let all_files = FileIndexer::discover_files(&request.input_root, &self.file_glob_patterns())?;
