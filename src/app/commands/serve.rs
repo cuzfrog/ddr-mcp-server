@@ -100,7 +100,6 @@ pub(crate) fn prepare_serve(
         merged,
         embedder,
         &config.search,
-        &persist_path,
         &config.index,
     )?);
 

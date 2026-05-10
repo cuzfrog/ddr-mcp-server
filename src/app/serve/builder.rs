@@ -1,11 +1,7 @@
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::config::{IndexConfig, SearchConfig};
 use crate::embedder::{EmbedderFactory, EmbeddingService};
-use crate::index::write_bm25_index;
-use crate::index::Bm25IndexHeader;
-use crate::index::SourceIndexKind;
 use crate::index::MergedIndex;
 use crate::indexing::Bm25IndexBuilder;
 use crate::search::{
@@ -52,7 +48,6 @@ pub(crate) fn build_hybrid_search_service(
     merged: MergedIndex,
     embedder: Arc<Mutex<dyn EmbeddingService>>,
     search_config: &SearchConfig,
-    persist_path: &Path,
     index_config: &IndexConfig,
 ) -> anyhow::Result<HybridSearchService> {
     // Build semantic backend
@@ -83,24 +78,7 @@ pub(crate) fn build_hybrid_search_service(
         }
         .build(&chunk_texts);
 
-        // Persist to disk for future fast loads
-        let bm25_header = Bm25IndexHeader {
-            schema_version: crate::index::BM25_SCHEMA_VERSION,
-            k1: index_config.bm25_k1,
-            b: index_config.bm25_b,
-            avgdl: bm25_avgdl,
-            chunk_count: chunk_texts.len(),
-        };
-        // Write BM25 to each source sub-index that exists
-        for kind in &[SourceIndexKind::File, SourceIndexKind::Git] {
-            let source_dir = persist_path.join(kind.subdir());
-            if source_dir.exists() {
-                let bm25_dir = source_dir.join("bm25");
-                write_bm25_index(&bm25_dir, &bm25_header, &bm25_embeddings)?;
-            }
-        }
-
-        // Print a notice about the rebuild
+        // Print a notice about the in-memory rebuild
         eprintln!(
             "Rebuilt BM25 index from metadata ({} chunks).",
             chunk_texts.len()
@@ -209,12 +187,10 @@ mod tests {
         let embedder: Arc<Mutex<dyn EmbeddingService>> =
             Arc::new(Mutex::new(FakeEmbedder::new()));
         let config = Config::default();
-        let temp_dir = tempfile::TempDir::new().unwrap();
         let result = build_hybrid_search_service(
             merged,
             embedder,
             &config.search,
-            temp_dir.path(),
             &config.index,
         );
         assert!(result.is_ok());
@@ -222,10 +198,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_bm25_rebuild_from_metadata() -> anyhow::Result<()> {
-        let tmp = std::env::temp_dir().join("docent_bm25_rebuild_test");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp.join("file"))?;
-
         let metadata = vec![
             ChunkMetadata {
                 doc_ctx: DocumentContext {
@@ -278,12 +250,10 @@ mod tests {
             merged,
             embedder,
             &config.search,
-            &tmp,
             &config.index,
         )?;
 
         // The service should have a real BM25 backend, not a ZeroScoreBackend
-        // We verify by running a search — BM25 should produce non-zero scores
         let results = search_service.search("apples", 5).await?;
         let has_bm25_scores = results.iter().any(|r| r.bm25_score > 0.0);
         assert!(
@@ -291,15 +261,6 @@ mod tests {
             "BM25 rebuild should produce non-zero scores for matching terms"
         );
 
-        // Verify BM25 was written to disk
-        assert!(tmp.join("file").join("bm25").join("header.json").exists());
-        assert!(tmp
-            .join("file")
-            .join("bm25")
-            .join("embeddings.json")
-            .exists());
-
-        let _ = std::fs::remove_dir_all(&tmp);
         Ok(())
     }
 }
