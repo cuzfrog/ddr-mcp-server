@@ -40,10 +40,6 @@ pub(crate) struct IndexedBatch {
     pub bm25_avgdl: f32,
 }
 
-pub(crate) struct MergedBatch {
-    pub vectors: Vec<Vec<f32>>,
-    pub metadata: Vec<ChunkMetadata>,
-}
 
 /// Encapsulates fitting a BM25 embedder to a corpus and embedding chunk texts.
 pub(crate) struct Bm25IndexBuilder {
