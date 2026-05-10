@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::Config;
+use crate::config::{FileConfig, IndexConfig};
 
 use crate::support::ui::Console;
 
@@ -62,7 +62,14 @@ impl FileIndexOutcome {
 }
 
 pub trait FileIndexer: Send + Sync {
-    fn run(&self, config: &Config, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome>;
+    fn run(
+        &self,
+        index_config: &IndexConfig,
+        file_config: &FileConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
+        request: FileIndexRequest,
+    ) -> anyhow::Result<FileIndexOutcome>;
 }
 
 pub struct FileIndexerImpl {
@@ -74,22 +81,19 @@ pub fn create_file_indexer(console: Box<dyn Console>) -> impl FileIndexer {
 }
 
 impl FileIndexer for FileIndexerImpl {
-    fn run(&self, config: &Config, request: FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
+    fn run(
+        &self,
+        index_config: &IndexConfig,
+        file_config: &FileConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
+        request: FileIndexRequest,
+    ) -> anyhow::Result<FileIndexOutcome> {
         if request.rebuild {
-            self.rebuild(config, &request)
+            self.rebuild(index_config, file_config, bm25_k1, bm25_b, &request)
         } else {
-            self.incremental(config, &request)
+            self.incremental(index_config, file_config, bm25_k1, bm25_b, &request)
         }
-    }
-}
-
-impl FileIndexerImpl {
-    fn file_glob_patterns<'a>(&self, config: &'a Config) -> &'a [String] {
-        &config.file.as_ref().unwrap().glob_patterns
-    }
-
-    fn file_size_limit_mb(&self, config: &Config) -> u64 {
-        config.file.as_ref().unwrap().file_size_limit_mb
     }
 }
 
@@ -104,16 +108,20 @@ mod tests {
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
 
-    fn file_config(persist: &Path) -> Config {
-        let mut config = Config::default();
-        config.index.persist_path = persist.to_string_lossy().to_string();
-        config.index.embedding_model = "BGESmallENV15Q".to_string();
-        config.file = Some(crate::config::FileConfig {
+    fn file_config(persist: &Path) -> (IndexConfig, FileConfig) {
+        let index_config = IndexConfig {
+            embedding_model: "BGESmallENV15Q".to_string(),
+            persist_path: persist.to_string_lossy().to_string(),
+            chunk_size: 256,
+            chunk_overlap: 32,
+            max_size_mb: 512,
+        };
+        let file_config = FileConfig {
             enabled: true,
             glob_patterns: vec!["*.md".to_string()],
             file_size_limit_mb: 0,
-        });
-        config
+        };
+        (index_config, file_config)
     }
 
     fn write_file(dir: &Path, name: &str, content: &str) {
@@ -143,9 +151,9 @@ mod tests {
     #[test]
     fn rebuild_aborts_when_index_exists_and_confirmation_false() {
         let persist = make_temp_dir("wf_rebuild_abort");
-        let config = file_config(&persist);
+        let (index_config, file_config) = file_config(&persist);
         std::fs::create_dir_all(persist.join("file")).unwrap();
-        create_index_at(&persist, &config.index);
+        create_index_at(&persist, &index_config);
 
         let ui = crate::tests::fixtures::RecordingUi::never_confirm();
         let indexer = FileIndexerImpl {
@@ -155,7 +163,7 @@ mod tests {
             input_root: persist.clone(),
             rebuild: true,
         };
-        let result = indexer.run(&config, request).unwrap();
+        let result = indexer.run(&index_config, &file_config, 1.2, 0.75, request).unwrap();
         assert!(matches!(result, FileIndexOutcome::Aborted));
         let _ = std::fs::remove_dir_all(&persist);
     }
@@ -163,9 +171,9 @@ mod tests {
     #[test]
     fn rebuild_deletes_and_rewrites_when_confirmed() {
         let persist = make_temp_dir("wf_rebuild_overwrite");
-        let config = file_config(&persist);
+        let (index_config, file_config) = file_config(&persist);
         std::fs::create_dir_all(persist.join("file")).unwrap();
-        create_index_at(&persist, &config.index);
+        create_index_at(&persist, &index_config);
 
         let sources = persist.join("src");
         std::fs::create_dir_all(&sources).unwrap();
@@ -180,7 +188,7 @@ mod tests {
             input_root: sources,
             rebuild: true,
         };
-        let result = indexer.run(&config, request).unwrap();
+        let result = indexer.run(&index_config, &file_config, 1.2, 0.75, request).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));
         if let FileIndexOutcome::Indexed { chunk_count, .. } = result {
             assert!(chunk_count > 0, "Should index at least some chunks");

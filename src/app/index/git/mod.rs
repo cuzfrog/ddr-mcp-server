@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::Config;
+use crate::config::{GitConfig, IndexConfig};
 use crate::index::embedder::dims_for_model;
 
 use crate::index::{IndexRepository, SourceIndexKind};
@@ -71,7 +71,14 @@ impl GitIndexOutcome {
 }
 
 pub trait GitIndexer: Send + Sync {
-    fn run(&self, config: &Config, request: GitIndexRequest) -> anyhow::Result<GitIndexOutcome>;
+    fn run(
+        &self,
+        index_config: &IndexConfig,
+        git_config: &GitConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
+        request: GitIndexRequest,
+    ) -> anyhow::Result<GitIndexOutcome>;
 }
 
 pub struct GitIndexerImpl {
@@ -83,27 +90,28 @@ pub fn create_git_indexer(console: Box<dyn Console>) -> impl GitIndexer {
 }
 
 impl GitIndexer for GitIndexerImpl {
-    fn run(&self, config: &Config, request: GitIndexRequest) -> anyhow::Result<GitIndexOutcome> {
-        let git_config = config.git.as_ref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "[git] section required in docent.toml for index-git. Please add it and try again."
-            )
-        })?;
-
-        let persist_path = config.persist_path_buf();
-        let dims = dims_for_model(&config.index.embedding_model)?;
+    fn run(
+        &self,
+        index_config: &IndexConfig,
+        git_config: &GitConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
+        request: GitIndexRequest,
+    ) -> anyhow::Result<GitIndexOutcome> {
+        let persist_path = PathBuf::from(&index_config.persist_path);
+        let dims = dims_for_model(&index_config.embedding_model)?;
 
         if request.rebuild {
-            self.rebuild(&request, git_config, &persist_path, dims, config)
+            self.rebuild(&request, git_config, &persist_path, dims, index_config, bm25_k1, bm25_b)
         } else {
-            let repo = IndexRepository::new(&persist_path, &config.index);
+            let repo = IndexRepository::new(&persist_path, index_config);
             if !repo.exists(SourceIndexKind::Git) {
                 anyhow::bail!(
                     "No existing Git index found at '{}'. Use `docent index-git --rebuild` to create one.",
                     persist_path.display()
                 );
             }
-            self.incremental(&request, git_config, &persist_path, dims, config)
+            self.incremental(&request, git_config, &persist_path, dims, index_config, bm25_k1, bm25_b)
         }
     }
 }
@@ -111,18 +119,42 @@ impl GitIndexer for GitIndexerImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::IndexConfig;
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
 
-    fn base_config(persist: &std::path::Path) -> Config {
-        let mut config = Config::default();
-        config.index.persist_path = persist.to_string_lossy().to_string();
-        config
+    fn base_config(persist: &std::path::Path) -> (IndexConfig, GitConfig) {
+        let index_config = IndexConfig {
+            embedding_model: "BGESmallENV15Q".to_string(),
+            persist_path: persist.to_string_lossy().to_string(),
+            chunk_size: 256,
+            chunk_overlap: 32,
+            max_size_mb: 512,
+        };
+        let git_config = GitConfig {
+            depth_limit: -1,
+            branch: "main".to_string(),
+            enabled: true,
+            glob_patterns: vec!["*.md".to_string()],
+        };
+        (index_config, git_config)
     }
 
     #[test]
-    fn missing_git_config_returns_error() {
-        let persist = make_temp_dir("git_missing_config");
-        let config = base_config(&persist);
+    fn incremental_without_existing_index_returns_error() {
+        let persist = make_temp_dir("git_inc_no_existing");
+        let index_config = IndexConfig {
+            embedding_model: "BGESmallENV15Q".to_string(),
+            persist_path: persist.to_string_lossy().to_string(),
+            chunk_size: 256,
+            chunk_overlap: 32,
+            max_size_mb: 512,
+        };
+        let git_config = GitConfig {
+            depth_limit: -1,
+            branch: "main".to_string(),
+            enabled: true,
+            glob_patterns: vec!["*.md".to_string()],
+        };
         let ui = RecordingUi::always_confirm();
         let indexer = GitIndexerImpl {
             console: Box::new(ui),
@@ -132,10 +164,10 @@ mod tests {
             rebuild: false,
             verbose: false,
         };
-        let result = indexer.run(&config, req);
+        let result = indexer.run(&index_config, &git_config, 1.2, 0.75, req);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("[git] section"));
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("No existing Git index"));
         let _ = std::fs::remove_dir_all(&persist);
     }
 }

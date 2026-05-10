@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 use crate::app::index::runner;
-use crate::config::{Config, GitConfig};
+use crate::config::{GitConfig, IndexConfig};
 use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest};
 use super::{GitIndexOutcome, GitIndexRequest, GitIndexerImpl};
 impl GitIndexerImpl {
@@ -11,16 +11,18 @@ impl GitIndexerImpl {
         git_config: &GitConfig,
         persist_path: &Path,
         dims: usize,
-        config: &Config,
+        index_config: &IndexConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
     ) -> anyhow::Result<GitIndexOutcome> {
-        let repo = IndexRepository::new(persist_path, &config.index);
+        let repo = IndexRepository::new(persist_path, index_config);
         let stored = repo.load_one(SourceIndexKind::Git)?;
         let old_header = stored.header;
         let old_vectors = stored.vectors;
         let old_metadata = stored.metadata;
         let last_commit = old_header.last_indexed_commit.clone();
         let total_new = match self.check_git_size(
-            &request.repo_path, git_config, dims, last_commit.as_deref(), config,
+            &request.repo_path, git_config, dims, last_commit.as_deref(), index_config,
         )? {
             Some(n) => n,
             None => return Ok(GitIndexOutcome::Aborted),
@@ -41,10 +43,10 @@ impl GitIndexerImpl {
         let pb2 = self.console.progress(total_new_docs as u64, "Embedding documents");
         let indexable = super::prepare_git_documents(&new_docs, &vec![true; new_docs.len()]);
         let (batch, dims) = runner::run_indexing_pipeline(
-            &config.index,
+            index_config,
             &indexable,
-            config.search.bm25.k1,
-            config.search.bm25.b,
+            bm25_k1,
+            bm25_b,
             Some(pb2.as_ref()),
         )?;
         pb2.finish();
@@ -60,8 +62,8 @@ impl GitIndexerImpl {
             merged_metadata,
             dims,
             last_indexed_commit: Some(head_commit),
-            bm25_k1: config.search.bm25.k1,
-            bm25_b: config.search.bm25.b,
+            bm25_k1,
+            bm25_b,
         })?;
         Ok(GitIndexOutcome::Indexed {
             rebuilt: false,
@@ -76,11 +78,24 @@ impl GitIndexerImpl {
 #[cfg(test)]
 mod tests {
     use super::super::GitIndexer;
+    use crate::config::{GitConfig, IndexConfig};
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
     #[test]
     fn incremental_without_index_returns_error() {
         let persist = make_temp_dir("git_inc_no_index");
-        let config = crate::config::Config::default();
+        let index_config = IndexConfig {
+            embedding_model: "BGESmallENV15Q".to_string(),
+            persist_path: persist.to_string_lossy().to_string(),
+            chunk_size: 256,
+            chunk_overlap: 32,
+            max_size_mb: 512,
+        };
+        let git_config = GitConfig {
+            depth_limit: -1,
+            branch: "main".to_string(),
+            enabled: true,
+            glob_patterns: vec!["*.md".to_string()],
+        };
         let ui = RecordingUi::always_confirm();
         let indexer = super::GitIndexerImpl {
             console: Box::new(ui),
@@ -90,7 +105,7 @@ mod tests {
             rebuild: false,
             verbose: false,
         };
-        let result = indexer.run(&config, req);
+        let result = indexer.run(&index_config, &git_config, 1.2, 0.75, req);
         assert!(result.is_err());
         let _ = std::fs::remove_dir_all(&persist);
     }

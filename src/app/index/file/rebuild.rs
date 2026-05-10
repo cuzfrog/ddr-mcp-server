@@ -1,11 +1,11 @@
 use super::{FileIndexOutcome, FileIndexRequest, FileIndexerImpl};
 use crate::app::index::pipeline::unique_doc_count;
 use crate::app::index::runner;
-use crate::config::Config;
+use crate::config::{FileConfig, IndexConfig};
 use crate::index::{IndexRepository, SourceIndexKind};
 impl FileIndexerImpl {
-    fn confirm_rebuild(&self, config: &Config, persist_path: &std::path::Path) -> anyhow::Result<bool> {
-        let repo = IndexRepository::new(persist_path, &config.index);
+    fn confirm_rebuild(&self, index_config: &IndexConfig, persist_path: &std::path::Path) -> anyhow::Result<bool> {
+        let repo = IndexRepository::new(persist_path, index_config);
         match repo.load_one(SourceIndexKind::File) {
             Ok(_) => {
                 self.console.warn(&format!(
@@ -25,28 +25,42 @@ impl FileIndexerImpl {
         }
         Ok(true)
     }
-    fn index_files(&self, config: &Config, request: &FileIndexRequest) -> anyhow::Result<(crate::app::index::pipeline::IndexedBatch, usize)> {
-        let all_files = super::discover_files(&request.input_root, self.file_glob_patterns(config))?;
+    fn index_files(
+        &self,
+        index_config: &IndexConfig,
+        file_config: &FileConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
+        request: &FileIndexRequest,
+    ) -> anyhow::Result<(crate::app::index::pipeline::IndexedBatch, usize)> {
+        let all_files = super::discover_files(&request.input_root, &file_config.glob_patterns)?;
         self.console.info(&format!("Scanning: {} files found", all_files.len()));
         let pb = self.console.progress(all_files.len() as u64, "Indexing files");
-        let docs = super::prepare_files(&all_files, &request.input_root, self.file_size_limit_mb(config))?;
+        let docs = super::prepare_files(&all_files, &request.input_root, file_config.file_size_limit_mb)?;
         let (batch, dims) = runner::run_indexing_pipeline(
-            &config.index,
+            index_config,
             &docs,
-            config.search.bm25.k1,
-            config.search.bm25.b,
+            bm25_k1,
+            bm25_b,
             Some(pb.as_ref()),
         )?;
         pb.finish();
         Ok((batch, dims))
     }
-    pub(super) fn rebuild(&self, config: &Config, request: &FileIndexRequest) -> anyhow::Result<FileIndexOutcome> {
-        let persist_path = config.persist_path_buf();
-        if !self.confirm_rebuild(config, &persist_path)? {
+    pub(super) fn rebuild(
+        &self,
+        index_config: &IndexConfig,
+        file_config: &FileConfig,
+        bm25_k1: f32,
+        bm25_b: f32,
+        request: &FileIndexRequest,
+    ) -> anyhow::Result<FileIndexOutcome> {
+        let persist_path = std::path::PathBuf::from(&index_config.persist_path);
+        if !self.confirm_rebuild(index_config, &persist_path)? {
             return Ok(FileIndexOutcome::Aborted);
         }
-        let repo = IndexRepository::new(&persist_path, &config.index);
-        let (batch, dims) = self.index_files(config, request)?;
+        let repo = IndexRepository::new(&persist_path, index_config);
+        let (batch, dims) = self.index_files(index_config, file_config, bm25_k1, bm25_b, request)?;
         let chunk_count = batch.metadata.len();
         let doc_count = unique_doc_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)?;
@@ -57,18 +71,22 @@ impl FileIndexerImpl {
 mod tests {
     use super::FileIndexOutcome;
     use super::super::FileIndexer;
-    use crate::config::Config;
+    use crate::config::{FileConfig, IndexConfig};
     use crate::tests::fixtures::{make_temp_dir, RecordingUi};
-    fn file_config(persist: &std::path::Path) -> Config {
-        let mut config = Config::default();
-        config.index.persist_path = persist.to_string_lossy().to_string();
-        config.index.embedding_model = "BGESmallENV15Q".to_string();
-        config.file = Some(crate::config::FileConfig {
+    fn file_config(persist: &std::path::Path) -> (IndexConfig, FileConfig) {
+        let index_config = IndexConfig {
+            embedding_model: "BGESmallENV15Q".to_string(),
+            persist_path: persist.to_string_lossy().to_string(),
+            chunk_size: 256,
+            chunk_overlap: 32,
+            max_size_mb: 512,
+        };
+        let file_config = FileConfig {
             enabled: true,
             glob_patterns: vec!["*.md".to_string()],
             file_size_limit_mb: 0,
-        });
-        config
+        };
+        (index_config, file_config)
     }
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
@@ -76,7 +94,7 @@ mod tests {
     #[test]
     fn rebuild_returns_indexed_outcome_with_sources() {
         let persist = make_temp_dir("wf_rebuild_sources");
-        let config = file_config(&persist);
+        let (index_config, file_config) = file_config(&persist);
         let sources = persist.join("src");
         std::fs::create_dir_all(&sources).unwrap();
         write_file(&sources, "a.md", "# Hello World\ntest content");
@@ -89,7 +107,7 @@ mod tests {
             input_root: sources,
             rebuild: true,
         };
-        let result = indexer.run(&config, req).unwrap();
+        let result = indexer.run(&index_config, &file_config, 1.2, 0.75, req).unwrap();
         assert!(matches!(result, FileIndexOutcome::Indexed { .. }));
         let _ = std::fs::remove_dir_all(&persist);
     }

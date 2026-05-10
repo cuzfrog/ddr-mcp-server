@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::config::{Config, GitConfig};
+use crate::config::{GitConfig, IndexConfig};
 
 use super::GitIndexerImpl;
 
@@ -11,15 +11,15 @@ impl GitIndexerImpl {
         git_config: &GitConfig,
         dims: usize,
         since_commit: Option<&str>,
-        config: &Config,
+        index_config: &IndexConfig,
     ) -> anyhow::Result<Option<usize>> {
         let total = super::estimate_commit_count(repo_path, git_config, since_commit)?;
         let estimated_mb = super::estimate_git_index_size(total, dims) / (1024 * 1024);
         let advice = "To reduce the size:\n  - Set [git] depth_limit to a smaller value in docent.toml\n  - Increase [index] max_size_mb in docent.toml".to_string();
-        if estimated_mb > config.index.max_size_mb {
+        if estimated_mb > index_config.max_size_mb {
             self.console.warn(&format_size_warning(
                 estimated_mb,
-                config.index.max_size_mb,
+                index_config.max_size_mb,
                 &advice,
             ));
             if !self.console.confirm("Continue?")? {

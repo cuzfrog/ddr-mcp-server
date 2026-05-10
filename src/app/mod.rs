@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::app::index::file::FileIndexer;
 use crate::app::index::git::GitIndexer;
-use crate::app::serve::server::{Server, create_server};
+use crate::app::serve::server::Server;
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
 use crate::index::embedder::list_supported_models;
 use crate::support::ui::Console;
@@ -91,11 +91,20 @@ impl Application {
         rebuild: bool,
         _verbose: bool,
     ) -> anyhow::Result<()> {
+        let file_config = config.file.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("[file] section required in docent.toml for file indexing")
+        })?;
         let request = index::file::FileIndexRequest {
             input_root,
             rebuild,
         };
-        let outcome = self.file_indexer.run(config, request)?;
+        let outcome = self.file_indexer.run(
+            &config.index,
+            file_config,
+            config.search.bm25.k1,
+            config.search.bm25.b,
+            request,
+        )?;
         self.emit_outcome(outcome.format_for_ui());
         Ok(())
     }
@@ -107,12 +116,21 @@ impl Application {
         rebuild: bool,
         verbose: bool,
     ) -> anyhow::Result<()> {
+        let git_config = config.git.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("[git] section required in docent.toml for git indexing")
+        })?;
         let request = index::git::GitIndexRequest {
             repo_path,
             rebuild,
             verbose,
         };
-        let outcome = self.git_indexer.run(config, request)?;
+        let outcome = self.git_indexer.run(
+            &config.index,
+            git_config,
+            config.search.bm25.k1,
+            config.search.bm25.b,
+            request,
+        )?;
         self.emit_outcome(outcome.format_for_ui());
         Ok(())
     }
@@ -121,6 +139,7 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::serve::server::create_server;
     use crate::tests::fixtures::make_temp_dir;
 
     #[test]
