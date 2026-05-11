@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -45,4 +47,14 @@ pub struct ChunkMetadata {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_fresh: Option<bool>,
+}
+
+impl ChunkMetadata {
+    pub(crate) fn unique_count(metadata: &[Self]) -> usize {
+        metadata
+            .iter()
+            .map(|m| &*m.doc_ctx.source_path)
+            .collect::<HashSet<_>>()
+            .len()
+    }
 }

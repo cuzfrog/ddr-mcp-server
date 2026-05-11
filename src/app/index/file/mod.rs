@@ -66,7 +66,8 @@ mod tests {
     use super::*;
     use crate::app::index::chunking::counter::WhitespaceTokenCounter;
     use crate::app::index::chunking::{Chunker, DocumentChunker};
-    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor, unique_doc_count};
+    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor};
+    use crate::domain::ChunkMetadata;
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;
     use crate::index::{IndexRepository, SourceIndexKind};
@@ -106,7 +107,7 @@ mod tests {
             chunker,
         );
         let (batch, dims) = processor.run(&[doc], None).unwrap();
-        let doc_count = unique_doc_count(&batch.metadata);
+        let doc_count = ChunkMetadata::unique_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None).unwrap();
     }
 

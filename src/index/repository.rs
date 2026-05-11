@@ -8,7 +8,7 @@ use crate::index::merger::IndexMerger;
 use crate::index::sub_index::SubIndex;
 use crate::index::vector_store::VectorStore;
 use crate::index::SourceIndexKind;
-use crate::app::index::pipeline::{IndexedBatch, unique_doc_count};
+use crate::app::index::pipeline::IndexedBatch;
 
 pub struct MergedIndex {
     pub vectors: VectorStore,
@@ -144,7 +144,7 @@ impl IndexRepository {
         &self,
         req: &StoreMergedRequest,
     ) -> anyhow::Result<(usize, usize)> {
-        let doc_count = unique_doc_count(&req.merged_metadata);
+        let doc_count = ChunkMetadata::unique_count(&req.merged_metadata);
         let chunk_count = req.merged_metadata.len();
         let header = IndexHeader::from_config(
             &self.config,
@@ -184,7 +184,7 @@ mod tests {
 
     use crate::app::index::pipeline::IndexableDocument;
     use crate::config::IndexConfig;
-    use crate::domain::IndexKind;
+    use crate::domain::{ChunkMetadata, IndexKind};
     use crate::index::{
         read_bm25_index, IndexRepository, SourceIndexKind,
     };
@@ -225,7 +225,7 @@ mod tests {
             chunker,
         );
         let (batch, dims) = processor.run(&[doc], None).unwrap();
-        let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
+        let doc_count = ChunkMetadata::unique_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)
             .unwrap();
     }
@@ -268,7 +268,7 @@ mod tests {
             chunker,
         );
         let (batch, dims) = processor.run(&[doc], None).unwrap();
-        let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
+        let doc_count = ChunkMetadata::unique_count(&batch.metadata);
         repo.store(SourceIndexKind::Git, &batch, dims, doc_count, None)
             .unwrap();
 
@@ -419,7 +419,7 @@ mod tests {
             chunker,
         );
         let (batch, dims) = processor.run(&[doc], None).unwrap();
-        let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
+        let doc_count = ChunkMetadata::unique_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None).unwrap();
         let bm25_dir = persist.join("file").join("bm25");
         let _ = std::fs::remove_dir_all(&bm25_dir);

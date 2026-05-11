@@ -116,7 +116,8 @@ mod tests {
     use super::super::FileIndexer;
     use crate::app::index::chunking::counter::WhitespaceTokenCounter;
     use crate::app::index::chunking::{Chunker, DocumentChunker};
-    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor, IndexableDocument, unique_doc_count};
+    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor, IndexableDocument};
+    use crate::domain::ChunkMetadata;
     use crate::app::index::{IndexOutcome, IndexRequest, Indexer};
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;

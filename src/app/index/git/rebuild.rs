@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::app::index::pipeline::unique_doc_count;
 use crate::app::index::{IndexKind, IndexOutcome, IndexRequest};
+use crate::domain::ChunkMetadata;
 use crate::index::{IndexRepository, SourceIndexKind};
 use super::GitIndexer;
 
@@ -62,7 +62,7 @@ impl GitIndexer {
         let (batch, dims, embed_secs) = self.embed_docs(&docs)?;
         let repo = IndexRepository::new(persist_path, &self.index_config, self.bm25_k1, self.bm25_b);
         let chunk_count = batch.metadata.len();
-        let doc_count = unique_doc_count(&batch.metadata);
+        let doc_count = ChunkMetadata::unique_count(&batch.metadata);
         repo.store(SourceIndexKind::Git, &batch, dims, doc_count, Some(head_commit))?;
         Ok(IndexOutcome::Indexed {
             kind: IndexKind::Git,

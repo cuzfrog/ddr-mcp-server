@@ -71,7 +71,7 @@ fn test_index_and_store_round_trip() {
     }
 
     let repo = IndexRepository::new(&index_dir, &config, 1.2, 0.75);
-    let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
+    let doc_count = ChunkMetadata::unique_count(&batch.metadata);
     repo.store(SourceIndexKind::File, &batch, dims, doc_count, None).unwrap();
 
     let (header, vectors, metadata) = read_index_at(&index_dir);
@@ -182,7 +182,7 @@ fn test_index_preserves_metadata_fields() {
     let (batch, dims) = processor.run(&docs, None).unwrap();
 
     let repo = IndexRepository::new(&index_dir, &config, 1.2, 0.75);
-    let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
+    let doc_count = ChunkMetadata::unique_count(&batch.metadata);
     repo.store(SourceIndexKind::File, &batch, dims, doc_count, None).unwrap();
 
     let (_header, _vectors, metadata) = read_index_at(&index_dir);

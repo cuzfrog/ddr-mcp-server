@@ -226,7 +226,7 @@ mod tests {
             chunker,
         );
         let (batch, dims) = processor.run(&[doc], None).unwrap();
-        let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
+        let doc_count = crate::domain::ChunkMetadata::unique_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)
             .unwrap();
     }
