@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
+use crate::app::index::pipeline::unique_doc_count;
 use crate::app::index::{IndexKind, IndexOutcome, IndexRequest};
 use crate::index::{IndexRepository, SourceIndexKind};
 use super::GitIndexer;
@@ -37,8 +37,7 @@ impl GitIndexer {
         let freshness = super::compute_freshness(docs);
         let indexable = super::prepare_git_documents(docs, &freshness);
 
-        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
-        let (batch, dims) = pipeline.run(&indexable, Some(pb_embed.as_ref()))?;
+        let (batch, dims) = self.processor.run(&indexable, Some(pb_embed.as_ref()))?;
 
         pb_embed.finish();
         let embed_secs = embed_start.elapsed().as_secs_f64();
@@ -80,8 +79,17 @@ impl GitIndexer {
 #[cfg(test)]
 mod tests {
     use super::super::GitIndexer;
+    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor};
     use crate::app::index::{IndexKind, IndexRequest, Indexer};
-    use crate::tests::fixtures::{make_temp_dir, RecordingUi, test_model_factory};
+    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, RecordingUi, test_model_factory};
+
+    fn test_processor() -> Box<dyn IndexingProcessor> {
+        let embedder = FakeEmbedder::new();
+        let chunker = Box::new(crate::app::index::chunking::DocumentChunker::new(
+            256, 32, Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
+        ));
+        create_test_processor(Box::new(embedder), chunker)
+    }
 
     #[test]
     fn rebuild_requires_existing_git_repo_to_proceed() {
@@ -95,6 +103,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::Git,

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::app::index::pipeline::IndexingProcessor;
 use crate::app::index::{IndexKind, IndexOutcome, IndexRequest, Indexer};
 use crate::config::Config;
 use crate::index::model_factory::ModelFactory;
@@ -25,12 +26,14 @@ pub(crate) struct FileIndexer {
     pub bm25_k1: f32,
     pub bm25_b: f32,
     pub model_factory: Arc<dyn ModelFactory>,
+    pub processor: Box<dyn IndexingProcessor>,
 }
 
 pub fn create_file_indexer(
     config: &Config,
     console: Box<dyn Console>,
     model_factory: Arc<dyn ModelFactory>,
+    processor: Box<dyn IndexingProcessor>,
 ) -> impl Indexer {
     let fc = config.file.as_ref().expect("FileIndexer requires file config");
     FileIndexer {
@@ -40,6 +43,7 @@ pub fn create_file_indexer(
         bm25_k1: config.search.bm25.k1,
         bm25_b: config.search.bm25.b,
         model_factory,
+        processor,
     }
 }
 
@@ -62,11 +66,19 @@ mod tests {
     use super::*;
     use crate::app::index::chunking::counter::WhitespaceTokenCounter;
     use crate::app::index::chunking::{Chunker, DocumentChunker};
-    use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
+    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor, unique_doc_count};
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
+
+    fn test_processor() -> Box<dyn IndexingProcessor> {
+        let embedder = FakeEmbedder::new();
+        let chunker = Box::new(DocumentChunker::new(
+            256, 32, Box::new(WhitespaceTokenCounter),
+        ));
+        create_test_processor(Box::new(embedder), chunker)
+    }
 
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
@@ -89,11 +101,11 @@ mod tests {
             config.chunk_overlap,
             Box::new(WhitespaceTokenCounter),
         ));
-        let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+        let processor = create_test_processor(
             Box::new(embedder),
             chunker,
         );
-        let (batch, dims) = pipeline.run(&[doc], None).unwrap();
+        let (batch, dims) = processor.run(&[doc], None).unwrap();
         let doc_count = unique_doc_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None).unwrap();
     }
@@ -113,6 +125,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: crate::tests::fixtures::test_model_factory(),
+            processor: test_processor(),
         };
         let request = IndexRequest {
             kind: IndexKind::File,
@@ -145,6 +158,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: crate::tests::fixtures::test_model_factory(),
+            processor: test_processor(),
         };
         let request = IndexRequest {
             kind: IndexKind::File,

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use crate::app::index::chunking::counter::HuggingFaceTokenCounter;
 use crate::app::index::chunking::{Chunk, Chunker, DocumentChunker};
@@ -14,12 +15,35 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const BATCH_SIZE: usize = 64;
 
-pub struct IndexingPipeline {
-    chunker: Box<dyn Chunker>,
-    embedder: Box<dyn Embedder>,
+pub trait IndexingProcessor: Send + Sync {
+    fn run(
+        &self,
+        docs: &[IndexableDocument],
+        progress: Option<&dyn ProgressSink>,
+    ) -> anyhow::Result<(IndexedBatch, usize)>;
 }
 
-impl IndexingPipeline {
+pub fn create_processor(
+    factory: &dyn ModelFactory,
+    index_config: &IndexConfig,
+) -> anyhow::Result<Box<dyn IndexingProcessor>> {
+    Ok(Box::new(ParallelBatchIndexingProcessor::new(factory, index_config)?))
+}
+
+#[cfg(test)]
+pub fn create_test_processor(
+    embedder: Box<dyn Embedder>,
+    chunker: Box<dyn Chunker>,
+) -> Box<dyn IndexingProcessor> {
+    Box::new(ParallelBatchIndexingProcessor::with_embedder_and_chunker(embedder, chunker))
+}
+
+struct ParallelBatchIndexingProcessor {
+    chunker: Box<dyn Chunker>,
+    embedder: Mutex<Box<dyn Embedder>>,
+}
+
+impl ParallelBatchIndexingProcessor {
     pub fn new(factory: &dyn ModelFactory, index_config: &IndexConfig) -> anyhow::Result<Self> {
         let token_counter = Box::new(HuggingFaceTokenCounter::from_tokenizer(factory.tokenizer()));
         let chunker: Box<dyn Chunker> = Box::new(DocumentChunker::new(
@@ -28,7 +52,7 @@ impl IndexingPipeline {
             token_counter,
         ));
         let embedder = create_embedder(&index_config.embedding_model, &PathBuf::from(&index_config.cache_dir))?;
-        Ok(Self { chunker, embedder })
+        Ok(Self { chunker, embedder: Mutex::new(embedder) })
     }
 
     #[cfg(test)]
@@ -36,11 +60,13 @@ impl IndexingPipeline {
         embedder: Box<dyn Embedder>,
         chunker: Box<dyn Chunker>,
     ) -> Self {
-        Self { chunker, embedder }
+        Self { chunker, embedder: Mutex::new(embedder) }
     }
+}
 
-    pub fn run(
-        &mut self,
+impl IndexingProcessor for ParallelBatchIndexingProcessor {
+    fn run(
+        &self,
         docs: &[IndexableDocument],
         progress: Option<&dyn ProgressSink>,
     ) -> anyhow::Result<(IndexedBatch, usize)> {
@@ -49,10 +75,10 @@ impl IndexingPipeline {
         let chunk_texts: Vec<&str> = all_chunks.iter().map(|(_, c)| c.text.as_str()).collect();
 
         let mut all_vectors: Vec<Vec<f32>> = Vec::with_capacity(chunk_texts.len());
+        let mut embedder = self.embedder.lock().unwrap();
         for batch in chunk_texts.chunks(BATCH_SIZE) {
             let batch_size = batch.len() as u64;
-            let vectors = self
-                .embedder
+            let vectors = embedder
                 .embed(batch)
                 .map_err(|e| anyhow::anyhow!("Embedding operation failed: {}", e))?;
             if let Some(p) = progress {
@@ -60,6 +86,7 @@ impl IndexingPipeline {
             }
             all_vectors.extend(vectors);
         }
+        drop(embedder);
 
         let mut batch_metadata: Vec<ChunkMetadata> = Vec::with_capacity(all_chunks.len());
         for ((doc_index, chunk), _) in all_chunks.iter().zip(all_vectors.iter()) {
@@ -80,10 +107,12 @@ impl IndexingPipeline {
             vectors: all_vectors,
             metadata: batch_metadata,
         };
-        let dims = self.embedder.dims();
+        let dims = self.embedder.lock().unwrap().dims();
         Ok((batch, dims))
     }
+}
 
+impl ParallelBatchIndexingProcessor {
     fn chunk_documents(
         &self,
         docs: &[IndexableDocument],

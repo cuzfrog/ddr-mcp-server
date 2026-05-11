@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::app::index::pipeline::IndexingProcessor;
 use crate::app::index::{IndexKind, IndexOutcome, IndexRequest, Indexer};
 use crate::config::Config;
 use crate::index::model_factory::ModelFactory;
@@ -29,12 +30,14 @@ pub(crate) struct GitIndexer {
     pub bm25_k1: f32,
     pub bm25_b: f32,
     pub model_factory: Arc<dyn ModelFactory>,
+    pub processor: Box<dyn IndexingProcessor>,
 }
 
 pub fn create_git_indexer(
     config: &Config,
     console: Box<dyn Console>,
     model_factory: Arc<dyn ModelFactory>,
+    processor: Box<dyn IndexingProcessor>,
 ) -> impl Indexer {
     let gc = config.git.as_ref().expect("GitIndexer requires git config");
     GitIndexer {
@@ -44,6 +47,7 @@ pub fn create_git_indexer(
         bm25_k1: config.search.bm25.k1,
         bm25_b: config.search.bm25.b,
         model_factory,
+        processor,
     }
 }
 
@@ -74,8 +78,18 @@ impl Indexer for GitIndexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::index::pipeline::create_test_processor;
+    use crate::app::index::pipeline::IndexingProcessor;
     use crate::app::index::IndexKind;
-    use crate::tests::fixtures::{make_temp_dir, RecordingUi, test_model_factory};
+    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, RecordingUi, test_model_factory};
+
+    fn test_processor() -> Box<dyn IndexingProcessor> {
+        let embedder = FakeEmbedder::new();
+        let chunker = Box::new(crate::app::index::chunking::DocumentChunker::new(
+            256, 32, Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
+        ));
+        create_test_processor(Box::new(embedder), chunker)
+    }
 
     #[test]
     fn incremental_without_existing_index_returns_error() {
@@ -89,6 +103,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: crate::tests::fixtures::test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::Git,

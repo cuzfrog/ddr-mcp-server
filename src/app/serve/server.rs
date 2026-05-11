@@ -221,11 +221,11 @@ mod tests {
             config.chunk_overlap,
             Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
         ));
-        let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder_and_chunker(
+        let processor = crate::app::index::pipeline::create_test_processor(
             Box::new(embedder),
             chunker,
         );
-        let (batch, dims) = pipeline.run(&[doc], None).unwrap();
+        let (batch, dims) = processor.run(&[doc], None).unwrap();
         let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
         repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)
             .unwrap();

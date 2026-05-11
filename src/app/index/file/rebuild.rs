@@ -1,4 +1,4 @@
-use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
+use crate::app::index::pipeline::unique_doc_count;
 use crate::app::index::{IndexKind, IndexOutcome, IndexRequest};
 use crate::index::{IndexRepository, SourceIndexKind};
 use super::FileIndexer;
@@ -36,8 +36,7 @@ impl FileIndexer {
         let pb = self.console.progress(all_files.len() as u64, "Indexing files");
         let docs = super::prepare_files(&all_files, &request.input_path, self.file_config.file_size_limit_mb)?;
 
-        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
-        let (batch, dims) = pipeline.run(&docs, Some(pb.as_ref()))?;
+        let (batch, dims) = self.processor.run(&docs, Some(pb.as_ref()))?;
 
         pb.finish();
         Ok((batch, dims))
@@ -71,8 +70,17 @@ impl FileIndexer {
 #[cfg(test)]
 mod tests {
     use super::super::FileIndexer;
+    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor};
     use crate::app::index::{IndexKind, IndexOutcome, IndexRequest, Indexer};
-    use crate::tests::fixtures::{make_temp_dir, RecordingUi, test_model_factory};
+    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, RecordingUi, test_model_factory};
+
+    fn test_processor() -> Box<dyn IndexingProcessor> {
+        let embedder = FakeEmbedder::new();
+        let chunker = Box::new(crate::app::index::chunking::DocumentChunker::new(
+            256, 32, Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
+        ));
+        create_test_processor(Box::new(embedder), chunker)
+    }
 
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
@@ -94,6 +102,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::File,

@@ -3,7 +3,7 @@ use crate::domain::{IndexKind, ChunkMetadata};
 use crate::index::{IndexRepository, SourceIndexKind, SCHEMA_VERSION};
 use crate::app::index::chunking::counter::WhitespaceTokenCounter;
 use crate::app::index::chunking::{Chunker, DocumentChunker};
-use crate::app::index::pipeline::{IndexingPipeline, IndexableDocument};
+use crate::app::index::pipeline::{create_test_processor, IndexableDocument};
 use crate::tests::fixtures::{make_temp_dir, read_index_at, FakeEmbedder};
 
 fn test_config(index_dir: &std::path::Path) -> IndexConfig {
@@ -57,11 +57,11 @@ fn test_index_and_store_round_trip() {
         config.chunk_overlap,
         Box::new(WhitespaceTokenCounter),
     ));
-    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+    let processor = create_test_processor(
         Box::new(embedder),
         chunker,
     );
-    let (batch, dims) = pipeline.run(&docs, None).unwrap();
+    let (batch, dims) = processor.run(&docs, None).unwrap();
 
     assert!(!batch.vectors.is_empty(), "Should produce vectors");
     assert_eq!(batch.vectors.len(), batch.metadata.len());
@@ -100,11 +100,11 @@ fn test_empty_document_list_produces_empty_index() {
         config.chunk_overlap,
         Box::new(WhitespaceTokenCounter),
     ));
-    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+    let processor = create_test_processor(
         Box::new(embedder),
         chunker,
     );
-    let (batch, dims) = pipeline.run(&docs, None).unwrap();
+    let (batch, dims) = processor.run(&docs, None).unwrap();
 
     assert!(batch.vectors.is_empty());
     assert!(batch.metadata.is_empty());
@@ -136,11 +136,11 @@ fn test_vectors_are_deterministic() {
         config.chunk_overlap,
         Box::new(WhitespaceTokenCounter),
     ));
-    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+    let processor = create_test_processor(
         Box::new(embedder),
         chunker,
     );
-    let (batch1, _dims) = pipeline.run(&docs, None).unwrap();
+    let (batch1, _dims) = processor.run(&docs, None).unwrap();
 
     let embedder2 = FakeEmbedder::new();
     let chunker2 = Box::new(DocumentChunker::new(
@@ -148,11 +148,11 @@ fn test_vectors_are_deterministic() {
         config.chunk_overlap,
         Box::new(WhitespaceTokenCounter),
     ));
-    let mut pipeline2 = IndexingPipeline::with_embedder_and_chunker(
+    let processor2 = create_test_processor(
         Box::new(embedder2),
         chunker2,
     );
-    let (batch2, _dims) = pipeline2.run(&docs, None).unwrap();
+    let (batch2, _dims) = processor2.run(&docs, None).unwrap();
 
     assert_eq!(batch1.vectors, batch2.vectors);
     assert_eq!(batch1.metadata.len(), batch2.metadata.len());
@@ -175,11 +175,11 @@ fn test_index_preserves_metadata_fields() {
         config.chunk_overlap,
         Box::new(WhitespaceTokenCounter),
     ));
-    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+    let processor = create_test_processor(
         Box::new(embedder),
         chunker,
     );
-    let (batch, dims) = pipeline.run(&docs, None).unwrap();
+    let (batch, dims) = processor.run(&docs, None).unwrap();
 
     let repo = IndexRepository::new(&index_dir, &config, 1.2, 0.75);
     let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use docent_mcp::app::index::pipeline::create_processor;
 use docent_mcp::app::index::{create_file_indexer, create_git_indexer, Indexer};
 use docent_mcp::app::Application;
 use docent_mcp::config::Config;
@@ -53,17 +54,23 @@ fn make_app(config: &Config) -> Application {
             .expect("Failed to create model factory"));
     let mut indexers: Vec<Box<dyn Indexer>> = Vec::new();
     if config.file.is_some() {
+        let proc = create_processor(factory.as_ref(), &config.index)
+            .expect("Failed to create indexing processor");
         indexers.push(Box::new(create_file_indexer(
             config,
             Box::new(docent_mcp::support::ui::create_console(config.verbose)),
             Arc::clone(&factory),
+            proc,
         )));
     }
     if config.git.is_some() {
+        let proc = create_processor(factory.as_ref(), &config.index)
+            .expect("Failed to create indexing processor");
         indexers.push(Box::new(create_git_indexer(
             config,
             Box::new(docent_mcp::support::ui::create_console(config.verbose)),
             Arc::clone(&factory),
+            proc,
         )));
     }
 

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::app::index::pipeline::IndexingPipeline;
 use crate::app::index::{IndexKind, IndexOutcome, IndexRequest};
 use crate::domain::ChunkMetadata;
 use crate::index::{IndexRepository, SourceIndexKind, StoreMergedRequest, VectorStore};
@@ -86,8 +85,7 @@ impl FileIndexer {
         let pb = self.console.progress(diff.to_index.len() as u64, "Indexing files");
         let docs = super::prepare_files(&diff.to_index, &request.input_path, self.file_config.file_size_limit_mb)?;
 
-        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
-        let (batch, dims) = pipeline.run(&docs, Some(pb.as_ref()))?;
+        let (batch, dims) = self.processor.run(&docs, Some(pb.as_ref()))?;
 
         pb.finish();
         let merged = super::merge_incremental(
@@ -118,13 +116,21 @@ mod tests {
     use super::super::FileIndexer;
     use crate::app::index::chunking::counter::WhitespaceTokenCounter;
     use crate::app::index::chunking::{Chunker, DocumentChunker};
-    use crate::app::index::pipeline::{IndexingPipeline, IndexableDocument, unique_doc_count};
+    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor, IndexableDocument, unique_doc_count};
     use crate::app::index::{IndexOutcome, IndexRequest, Indexer};
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;
     use crate::index::embedder::Embedder;
     use crate::index::{IndexRepository, SourceIndexKind};
     use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, RecordingUi, test_model_factory};
+
+    fn test_processor() -> Box<dyn IndexingProcessor> {
+        let embedder = FakeEmbedder::new();
+        let chunker = Box::new(DocumentChunker::new(
+            256, 32, Box::new(WhitespaceTokenCounter),
+        ));
+        create_test_processor(Box::new(embedder), chunker)
+    }
 
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
@@ -147,11 +153,11 @@ mod tests {
             config.chunk_overlap,
             Box::new(WhitespaceTokenCounter),
         ));
-        let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+        let processor = create_test_processor(
             Box::new(embedder),
             chunker,
         );
-        let (_batch, _dims) = pipeline.run(&[doc], None).unwrap();
+        let (_batch, _dims) = processor.run(&[doc], None).unwrap();
     }
 
     #[test]
@@ -169,6 +175,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::File,
@@ -205,11 +212,11 @@ mod tests {
                 altered_config.chunk_overlap,
                 Box::new(WhitespaceTokenCounter),
             ));
-            let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+            let processor = create_test_processor(
                 Box::new(embedder),
                 chunker,
             );
-            let (_batch, _dims) = pipeline.run(&[doc], None).unwrap();
+            let (_batch, _dims) = processor.run(&[doc], None).unwrap();
             let repo = IndexRepository::new(&persist, &altered_config, 1.2, 0.75);
             repo.store(SourceIndexKind::File, &_batch, _dims, 1, None).unwrap();
         }
@@ -225,6 +232,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::File,
@@ -258,11 +266,11 @@ mod tests {
                 ic.chunk_overlap,
                 Box::new(WhitespaceTokenCounter),
             ));
-            let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+            let processor = create_test_processor(
                 Box::new(embedder),
                 chunker,
             );
-            let (_batch, _dims) = pipeline.run(&[doc], None).unwrap();
+            let (_batch, _dims) = processor.run(&[doc], None).unwrap();
             let repo = IndexRepository::new(&persist, &ic, 1.2, 0.75);
             repo.store(SourceIndexKind::File, &_batch, _dims, 1, None).unwrap();
             let vectors_path = persist.join("file").join("vectors.bin");
@@ -279,6 +287,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::File,
@@ -307,6 +316,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::File,
@@ -342,6 +352,7 @@ mod tests {
             bm25_k1: 1.2,
             bm25_b: 0.75,
             model_factory: test_model_factory(),
+            processor: test_processor(),
         };
         let req = IndexRequest {
             kind: IndexKind::File,
