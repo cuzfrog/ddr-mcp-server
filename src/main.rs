@@ -50,10 +50,6 @@ fn make_app(config: &Config) -> Application {
     Application::new(console, Box::new(server), indexer)
 }
 
-fn make_app_basic(verbose: bool) -> Application {
-    make_app(&Config { verbose, ..Default::default() })
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -72,8 +68,14 @@ async fn main() -> anyhow::Result<()> {
             let config = Config::load(&args.config, false)?;
             make_app(&config).run_serve().await?;
         }
-        Commands::ListModels => make_app_basic(false).list_models(),
-        Commands::Init => make_app_basic(false).run_init()?,
+        Commands::ListModels => {
+            let console = docent_mcp::support::ui::create_console(false);
+            docent_mcp::app::list_models::list_models(&console);
+        }
+        Commands::Init => {
+            let console = docent_mcp::support::ui::create_console(false);
+            docent_mcp::app::init::run_init(&console)?;
+        }
         Commands::Index(args) => {
             let config = Config::load(&args.config, args.verbose)?;
             make_app(&config).run_index(&config, args.path, args.rebuild)?;

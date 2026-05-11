@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use crate::app::index::{IndexRequest, Indexer};
 use crate::app::serve::server::Server;
-use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
-use crate::index::embedder::list_supported_models;
+use crate::config::Config;
 use crate::support::ui::Console;
 
 pub mod index;
-pub(crate) mod init;
+pub mod init;
+pub mod list_models;
 pub mod serve;
 
 pub struct Application {
@@ -23,26 +23,6 @@ impl Application {
         indexer: Box<dyn Indexer>,
     ) -> Self {
         Self { console, server, indexer }
-    }
-
-    pub fn run_init(&self) -> anyhow::Result<()> {
-        let target = PathBuf::from("./docent.toml");
-        if target.exists() {
-            let existing = std::fs::read_to_string(&target)?;
-            let merged = init::merge_toml(DEFAULT_TEMPLATE, &existing)?;
-            std::fs::write(&target, &merged)?;
-            self.console.info(&format!("Merged new config fields into {}", target.display()));
-        } else {
-            std::fs::write(&target, DEFAULT_TEMPLATE)?;
-            self.console.info(&format!("Generated {}", target.display()));
-        }
-        Ok(())
-    }
-
-    pub fn list_models(&self) {
-        for (name, dim) in list_supported_models() {
-            self.console.info(&format!("{} (dim: {})", name, dim));
-        }
     }
 
     pub fn run_index(
