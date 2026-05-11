@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::app::index::{CompositeIndexer, IndexRequest, Indexer};
+use crate::app::index::{IndexRequest, Indexer};
 use crate::app::serve::server::Server;
 use crate::config::{defaults::DEFAULT_TEMPLATE, Config};
-use crate::domain::IndexKind;
 use crate::index::embedder::list_supported_models;
 use crate::support::ui::Console;
 
@@ -15,16 +13,16 @@ pub mod serve;
 pub struct Application {
     console: Box<dyn Console>,
     server: Box<dyn Server>,
-    indexer: CompositeIndexer,
+    indexer: Box<dyn Indexer>,
 }
 
 impl Application {
     pub fn new(
         console: Box<dyn Console>,
         server: Box<dyn Server>,
-        indexers: HashMap<IndexKind, Box<dyn Indexer>>,
+        indexer: Box<dyn Indexer>,
     ) -> Self {
-        Self { console, server, indexer: CompositeIndexer::new(indexers) }
+        Self { console, server, indexer }
     }
 
     pub fn run_init(&self) -> anyhow::Result<()> {
@@ -93,9 +91,10 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::index::IndexKind;
+    use crate::app::index::{CompositeIndexer, IndexKind};
     use crate::app::serve::server::create_server;
     use crate::tests::fixtures::{make_temp_dir, serve_config_fixture};
+    use std::collections::HashMap;
 
     #[test]
     fn format_supported_models_returns_expected_strings() {
@@ -130,7 +129,7 @@ mod tests {
         let app = Application::new(
             Box::new(crate::support::ui::create_console(false)),
             Box::new(create_server(Config::default(), Box::new(crate::support::ui::create_console(false)))),
-            HashMap::new(),
+            Box::new(CompositeIndexer::new(HashMap::new())),
         );
 
         app.run_index(&config, Some(dir.clone()), false, false).unwrap();

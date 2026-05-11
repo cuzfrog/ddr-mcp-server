@@ -1,8 +1,9 @@
 pub(crate) mod chunking;
-pub mod file;
-pub mod git;
+pub(crate) mod file;
+pub(crate) mod git;
 pub(crate) mod pipeline;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub use crate::domain::IndexKind;
@@ -111,7 +112,50 @@ pub trait Indexer: Send + Sync {
     fn run(&self, request: &IndexRequest) -> anyhow::Result<IndexOutcome>;
 }
 
-use std::collections::HashMap;
+pub fn create_indexer(
+    index_config: crate::config::IndexConfig,
+    file_config: Option<crate::config::FileConfig>,
+    git_config: Option<crate::config::GitConfig>,
+    bm25_k1: f32,
+    bm25_b: f32,
+    verbose: bool,
+) -> anyhow::Result<Box<dyn Indexer>> {
+    use crate::index::embedder::{create_embedder, Embedder};
+    use crate::support::ui::create_console;
+
+    let mut indexers: HashMap<IndexKind, Box<dyn Indexer>> = HashMap::new();
+
+    if let Some(fc) = file_config {
+        let embedder: Box<dyn Embedder> = Box::new(create_embedder(&index_config.embedding_model)?);
+        indexers.insert(
+            IndexKind::File,
+            Box::new(file::create_file_indexer(
+                index_config.clone(),
+                fc,
+                bm25_k1,
+                bm25_b,
+                Box::new(create_console(verbose)),
+                embedder,
+            )),
+        );
+    }
+    if let Some(gc) = git_config {
+        let embedder: Box<dyn Embedder> = Box::new(create_embedder(&index_config.embedding_model)?);
+        indexers.insert(
+            IndexKind::Git,
+            Box::new(git::create_git_indexer(
+                index_config.clone(),
+                gc,
+                bm25_k1,
+                bm25_b,
+                Box::new(create_console(verbose)),
+                embedder,
+            )),
+        );
+    }
+
+    Ok(Box::new(CompositeIndexer::new(indexers)))
+}
 
 pub(crate) struct CompositeIndexer {
     indexers: HashMap<IndexKind, Box<dyn Indexer>>,

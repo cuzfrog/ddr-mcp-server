@@ -27,7 +27,7 @@ pub(crate) struct FileIndexer {
     pub embedder: Mutex<Box<dyn Embedder>>,
 }
 
-pub fn create_file_indexer(
+pub(crate) fn create_file_indexer(
     index_config: IndexConfig,
     file_config: FileConfig,
     bm25_k1: f32,

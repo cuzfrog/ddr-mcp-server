@@ -1,11 +1,7 @@
-use std::collections::HashMap;
-
 use clap::{Parser, Subcommand};
-use docent_mcp::app::index::Indexer;
+use docent_mcp::app::index::create_indexer;
 use docent_mcp::app::Application;
 use docent_mcp::config::Config;
-use docent_mcp::domain::IndexKind;
-use docent_mcp::index::embedder::{create_embedder, Embedder};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -49,49 +45,25 @@ fn make_app(config: &Config, verbose: bool) -> Application {
     let console = Box::new(docent_mcp::support::ui::create_console(verbose));
     let server_console = Box::new(docent_mcp::support::ui::create_console(verbose));
     let server = docent_mcp::app::serve::server::create_server(config.clone(), server_console);
-    let mut indexers: HashMap<IndexKind, Box<dyn Indexer>> = HashMap::new();
+    let indexer = create_indexer(
+        config.index.clone(),
+        config.file.clone(),
+        config.git.clone(),
+        config.search.bm25.k1,
+        config.search.bm25.b,
+        verbose,
+    ).expect("Failed to create indexers");
 
-    if let Some(ref file_config) = config.file {
-        let embedder: Box<dyn Embedder> = Box::new(create_embedder(&config.index.embedding_model)
-            .expect("Failed to create embedding model"));
-        indexers.insert(IndexKind::File, Box::new(docent_mcp::app::index::file::create_file_indexer(
-            config.index.clone(),
-            file_config.clone(),
-            config.search.bm25.k1,
-            config.search.bm25.b,
-            Box::new(docent_mcp::support::ui::create_console(verbose)),
-            embedder,
-        )));
-    }
-    if let Some(ref git_config) = config.git {
-        let embedder: Box<dyn Embedder> = Box::new(create_embedder(&config.index.embedding_model)
-            .expect("Failed to create embedding model"));
-        indexers.insert(IndexKind::Git, Box::new(docent_mcp::app::index::git::create_git_indexer(
-            config.index.clone(),
-            git_config.clone(),
-            config.search.bm25.k1,
-            config.search.bm25.b,
-            Box::new(docent_mcp::support::ui::create_console(verbose)),
-            embedder,
-        )));
-    }
-
-    Application::new(
-        console,
-        Box::new(server),
-        indexers,
-    )
+    Application::new(console, Box::new(server), indexer)
 }
 
 fn make_app_basic(verbose: bool) -> Application {
     let console = Box::new(docent_mcp::support::ui::create_console(verbose));
     let server_console = Box::new(docent_mcp::support::ui::create_console(verbose));
     let server = docent_mcp::app::serve::server::create_server(Config::default(), server_console);
-    Application::new(
-        console,
-        Box::new(server),
-        HashMap::new(),
-    )
+    let indexer = create_indexer(Config::default().index, None, None, 1.2, 0.75, verbose)
+        .expect("Failed to create indexers");
+    Application::new(console, Box::new(server), indexer)
 }
 
 #[tokio::main]

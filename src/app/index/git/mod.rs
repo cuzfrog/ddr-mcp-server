@@ -32,7 +32,7 @@ pub(crate) struct GitIndexer {
     pub embedder: Mutex<Box<dyn Embedder>>,
 }
 
-pub fn create_git_indexer(
+pub(crate) fn create_git_indexer(
     index_config: IndexConfig,
     git_config: GitConfig,
     bm25_k1: f32,
