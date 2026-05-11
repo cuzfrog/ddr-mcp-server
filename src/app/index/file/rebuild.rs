@@ -36,7 +36,7 @@ impl FileIndexer {
         let pb = self.console.progress(all_files.len() as u64, "Indexing files");
         let docs = super::prepare_files(&all_files, &request.input_path, self.file_config.file_size_limit_mb)?;
 
-        let mut pipeline = IndexingPipeline::new(&self.model_factory, &self.index_config)?;
+        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
         let (batch, dims) = pipeline.run(&docs, Some(pb.as_ref()))?;
 
         pb.finish();

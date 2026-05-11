@@ -37,7 +37,7 @@ impl GitIndexer {
         let freshness = super::compute_freshness(docs);
         let indexable = super::prepare_git_documents(docs, &freshness);
 
-        let mut pipeline = IndexingPipeline::new(&self.model_factory, &self.index_config)?;
+        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
         let (batch, dims) = pipeline.run(&indexable, Some(pb_embed.as_ref()))?;
 
         pb_embed.finish();

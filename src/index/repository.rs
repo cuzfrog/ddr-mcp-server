@@ -204,7 +204,7 @@ mod tests {
 
         let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
 
-        let mut embedder = FakeEmbedder::new();
+        let embedder = FakeEmbedder::new();
         let doc = IndexableDocument {
             source_path: "test.md".to_string(),
             source_revision: "abc".to_string(),
@@ -215,10 +215,14 @@ mod tests {
             is_fresh: None,
         };
 
-        let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder(
-            Box::new(embedder),
+        let chunker = Box::new(crate::app::index::chunking::DocumentChunker::new(
             config.chunk_size,
             config.chunk_overlap,
+            Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
+        ));
+        let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder_and_chunker(
+            Box::new(embedder),
+            chunker,
         );
         let (batch, dims) = pipeline.run(&[doc], None).unwrap();
         let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
@@ -243,7 +247,7 @@ mod tests {
 
         let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
 
-        let mut embedder = FakeEmbedder::new();
+        let embedder = FakeEmbedder::new();
         let doc = IndexableDocument {
             source_path: "git-file.md".to_string(),
             source_revision: "def".to_string(),
@@ -254,10 +258,14 @@ mod tests {
             is_fresh: None,
         };
 
-        let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder(
-            Box::new(embedder),
+        let chunker = Box::new(crate::app::index::chunking::DocumentChunker::new(
             config.chunk_size,
             config.chunk_overlap,
+            Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
+        ));
+        let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder_and_chunker(
+            Box::new(embedder),
+            chunker,
         );
         let (batch, dims) = pipeline.run(&[doc], None).unwrap();
         let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
@@ -387,7 +395,7 @@ mod tests {
 
         let repo = IndexRepository::new(&persist, &config, 1.2, 0.75);
         {
-            let mut embedder = FakeEmbedder::new();
+            let embedder = FakeEmbedder::new();
             let doc = IndexableDocument {
                 source_path: "test.md".to_string(),
                 source_revision: "abc".to_string(),
@@ -397,10 +405,14 @@ mod tests {
                 kind: IndexKind::File,
                 is_fresh: None,
             };
-            let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder(
-                Box::new(embedder),
+            let chunker = Box::new(crate::app::index::chunking::DocumentChunker::new(
                 config.chunk_size,
                 config.chunk_overlap,
+                Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter),
+            ));
+            let mut pipeline = crate::app::index::pipeline::IndexingPipeline::with_embedder_and_chunker(
+                Box::new(embedder),
+                chunker,
             );
             let (batch, dims) = pipeline.run(&[doc], None).unwrap();
             let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);

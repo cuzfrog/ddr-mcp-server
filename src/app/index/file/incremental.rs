@@ -86,7 +86,7 @@ impl FileIndexer {
         let pb = self.console.progress(diff.to_index.len() as u64, "Indexing files");
         let docs = super::prepare_files(&diff.to_index, &request.input_path, self.file_config.file_size_limit_mb)?;
 
-        let mut pipeline = IndexingPipeline::new(&self.model_factory, &self.index_config)?;
+        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
         let (batch, dims) = pipeline.run(&docs, Some(pb.as_ref()))?;
 
         pb.finish();
@@ -116,6 +116,8 @@ impl FileIndexer {
 #[cfg(test)]
 mod tests {
     use super::super::FileIndexer;
+    use crate::app::index::chunking::counter::WhitespaceTokenCounter;
+    use crate::app::index::chunking::{Chunker, DocumentChunker};
     use crate::app::index::pipeline::{IndexingPipeline, IndexableDocument, unique_doc_count};
     use crate::app::index::{IndexOutcome, IndexRequest, Indexer};
     use crate::config::IndexConfig;
@@ -140,10 +142,14 @@ mod tests {
             kind: IndexKind::File,
             is_fresh: None,
         };
-        let mut pipeline = IndexingPipeline::with_embedder(
-            Box::new(embedder),
+        let chunker = Box::new(DocumentChunker::new(
             config.chunk_size,
             config.chunk_overlap,
+            Box::new(WhitespaceTokenCounter),
+        ));
+        let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+            Box::new(embedder),
+            chunker,
         );
         let (_batch, _dims) = pipeline.run(&[doc], None).unwrap();
     }
@@ -194,10 +200,14 @@ mod tests {
                 kind: IndexKind::File,
                 is_fresh: None,
             };
-            let mut pipeline = IndexingPipeline::with_embedder(
-                Box::new(embedder),
+            let chunker = Box::new(DocumentChunker::new(
                 altered_config.chunk_size,
                 altered_config.chunk_overlap,
+                Box::new(WhitespaceTokenCounter),
+            ));
+            let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+                Box::new(embedder),
+                chunker,
             );
             let (_batch, _dims) = pipeline.run(&[doc], None).unwrap();
             let repo = IndexRepository::new(&persist, &altered_config, 1.2, 0.75);
@@ -243,10 +253,14 @@ mod tests {
                 kind: IndexKind::File,
                 is_fresh: None,
             };
-            let mut pipeline = IndexingPipeline::with_embedder(
-                Box::new(embedder),
+            let chunker = Box::new(DocumentChunker::new(
                 ic.chunk_size,
                 ic.chunk_overlap,
+                Box::new(WhitespaceTokenCounter),
+            ));
+            let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+                Box::new(embedder),
+                chunker,
             );
             let (_batch, _dims) = pipeline.run(&[doc], None).unwrap();
             let repo = IndexRepository::new(&persist, &ic, 1.2, 0.75);

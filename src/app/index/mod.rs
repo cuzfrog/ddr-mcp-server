@@ -3,11 +3,11 @@ pub(crate) mod file;
 pub(crate) mod git;
 pub(crate) mod pipeline;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub use crate::domain::IndexKind;
-use crate::config::Config;
+pub use file::create_file_indexer;
+pub use git::create_git_indexer;
 
 pub struct IndexRequest {
     pub kind: IndexKind,
@@ -110,47 +110,6 @@ impl IndexOutcome {
 }
 
 pub trait Indexer: Send + Sync {
+    fn kind(&self) -> IndexKind;
     fn run(&self, request: &IndexRequest) -> anyhow::Result<IndexOutcome>;
-}
-
-pub fn create_indexer(config: &Config) -> anyhow::Result<Box<dyn Indexer>> {
-    use crate::index::model_factory::ModelFactory;
-    use crate::support::ui::create_console;
-
-    let factory = ModelFactory::new(&config.index.embedding_model)?;
-    let mut indexers: HashMap<IndexKind, Box<dyn Indexer>> = HashMap::new();
-    let make_console = || Box::new(create_console(config.verbose));
-
-    if config.file.is_some() {
-        indexers.insert(
-            IndexKind::File,
-            Box::new(file::create_file_indexer(config, make_console(), factory.clone())),
-        );
-    }
-    if config.git.is_some() {
-        indexers.insert(
-            IndexKind::Git,
-            Box::new(git::create_git_indexer(config, make_console(), factory.clone())),
-        );
-    }
-
-    Ok(Box::new(CompositeIndexer { indexers }))
-}
-
-#[cfg(test)]
-pub(crate) fn empty_indexer() -> Box<dyn Indexer> {
-    Box::new(CompositeIndexer { indexers: HashMap::new() })
-}
-
-struct CompositeIndexer {
-    indexers: HashMap<IndexKind, Box<dyn Indexer>>,
-}
-
-impl Indexer for CompositeIndexer {
-    fn run(&self, request: &IndexRequest) -> anyhow::Result<IndexOutcome> {
-        let indexer = self.indexers.get(&request.kind).ok_or_else(|| {
-            anyhow::anyhow!("No indexer registered for {:?}", request.kind)
-        })?;
-        indexer.run(request)
-    }
 }

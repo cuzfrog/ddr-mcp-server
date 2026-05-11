@@ -1,6 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use crate::app::index::{IndexOutcome, IndexRequest, Indexer};
+use crate::app::index::{IndexKind, IndexOutcome, IndexRequest, Indexer};
 use crate::config::Config;
 use crate::index::model_factory::ModelFactory;
 use crate::support::ui::Console;
@@ -27,13 +28,13 @@ pub(crate) struct GitIndexer {
     pub git_config: crate::config::GitConfig,
     pub bm25_k1: f32,
     pub bm25_b: f32,
-    pub model_factory: ModelFactory,
+    pub model_factory: Arc<dyn ModelFactory>,
 }
 
-pub(crate) fn create_git_indexer(
+pub fn create_git_indexer(
     config: &Config,
     console: Box<dyn Console>,
-    model_factory: ModelFactory,
+    model_factory: Arc<dyn ModelFactory>,
 ) -> impl Indexer {
     let gc = config.git.as_ref().expect("GitIndexer requires git config");
     GitIndexer {
@@ -47,6 +48,10 @@ pub(crate) fn create_git_indexer(
 }
 
 impl Indexer for GitIndexer {
+    fn kind(&self) -> IndexKind {
+        IndexKind::Git
+    }
+
     fn run(&self, request: &IndexRequest) -> anyhow::Result<IndexOutcome> {
         let persist_path = PathBuf::from(&self.index_config.persist_path);
         let dims = self.model_factory.dims();

@@ -14,7 +14,7 @@ pub struct Application {
     config: Config,
     console: Box<dyn Console>,
     server: Box<dyn Server>,
-    indexer: Box<dyn Indexer>,
+    indexers: Vec<Box<dyn Indexer>>,
 }
 
 impl Application {
@@ -22,9 +22,9 @@ impl Application {
         config: Config,
         console: Box<dyn Console>,
         server: Box<dyn Server>,
-        indexer: Box<dyn Indexer>,
+        indexers: Vec<Box<dyn Indexer>>,
     ) -> Self {
-        Self { config, console, server, indexer }
+        Self { config, console, server, indexers }
     }
 
     pub fn run_index(
@@ -41,13 +41,16 @@ impl Application {
         }
 
         for kind in &enabled_kinds {
+            let indexer = self.indexers.iter().find(|i| i.kind() == *kind).ok_or_else(|| {
+                anyhow::anyhow!("No indexer registered for {:?}", kind)
+            })?;
             let request = IndexRequest {
                 kind: *kind,
                 input_path: dir.clone(),
                 rebuild,
                 verbose: self.config.verbose,
             };
-            let outcome = self.indexer.run(&request)?;
+            let outcome = indexer.run(&request)?;
             self.emit_outcome(outcome.format_for_ui());
         }
 
@@ -71,7 +74,7 @@ impl Application {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::index::{empty_indexer, IndexKind};
+    use crate::app::index::IndexKind;
     use crate::app::serve::server::create_server;
     use crate::tests::fixtures::{make_temp_dir, serve_config_fixture};
 
@@ -109,7 +112,7 @@ mod tests {
             config.clone(),
             Box::new(crate::support::ui::create_console(false)),
             Box::new(create_server(Config::default(), Box::new(crate::support::ui::create_console(false)))),
-            empty_indexer(),
+            vec![],
         );
 
         app.run_index(Some(dir.clone()), false).unwrap();

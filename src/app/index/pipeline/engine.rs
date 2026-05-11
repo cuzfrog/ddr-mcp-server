@@ -1,7 +1,8 @@
-use crate::app::index::chunking::{Chunk, Chunker};
+use crate::app::index::chunking::counter::HuggingFaceTokenCounter;
+use crate::app::index::chunking::{Chunk, Chunker, DocumentChunker};
 use crate::config::IndexConfig;
 use crate::domain::ChunkMetadata;
-use crate::index::embedder::Embedder;
+use crate::index::embedder::{create_embedder, Embedder};
 use crate::index::model_factory::ModelFactory;
 use crate::app::index::pipeline::types::{IndexableDocument, IndexedBatch};
 use crate::support::progress::ProgressSink;
@@ -17,26 +18,23 @@ pub struct IndexingPipeline {
 }
 
 impl IndexingPipeline {
-    pub fn new(factory: &ModelFactory, index_config: &IndexConfig) -> anyhow::Result<Self> {
-        Ok(Self {
-            chunker: factory.create_chunker(index_config.chunk_size, index_config.chunk_overlap),
-            embedder: factory.create_embedder()?,
-        })
+    pub fn new(factory: &dyn ModelFactory, index_config: &IndexConfig) -> anyhow::Result<Self> {
+        let token_counter = Box::new(HuggingFaceTokenCounter::from_tokenizer(factory.tokenizer()));
+        let chunker: Box<dyn Chunker> = Box::new(DocumentChunker::new(
+            index_config.chunk_size,
+            index_config.chunk_overlap,
+            token_counter,
+        ));
+        let embedder = create_embedder(&index_config.embedding_model)?;
+        Ok(Self { chunker, embedder })
     }
 
     #[cfg(test)]
-    pub fn with_embedder(
+    pub fn with_embedder_and_chunker(
         embedder: Box<dyn Embedder>,
-        chunk_size: usize,
-        chunk_overlap: usize,
+        chunker: Box<dyn Chunker>,
     ) -> Self {
-        let token_counter = embedder.token_counter();
-        let chunker = crate::app::index::chunking::DocumentChunker::new(
-            chunk_size,
-            chunk_overlap,
-            token_counter,
-        );
-        Self { chunker: Box::new(chunker), embedder }
+        Self { chunker, embedder }
     }
 
     pub fn run(

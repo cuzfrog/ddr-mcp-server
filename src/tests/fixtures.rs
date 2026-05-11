@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use crate::app::index::chunking::counter::TokenCounter;
 use crate::config::{Config, FileConfig, GitConfig, IndexConfig};
 use crate::domain::ChunkMetadata;
 use crate::index::embedder::Embedder;
-use crate::index::model_factory::ModelFactory;
+use crate::index::model_factory::{create_model_factory, ModelFactory};
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
 
@@ -47,8 +47,8 @@ pub fn git_index_fixtures(persist: &Path, globs: &[&str]) -> (IndexConfig, GitCo
     (index_config, git_config)
 }
 
-pub fn test_model_factory() -> ModelFactory {
-    ModelFactory::new("BGESmallENV15Q").expect("Failed to create test model factory")
+pub fn test_model_factory() -> Arc<dyn ModelFactory> {
+    Arc::from(create_model_factory("BGESmallENV15Q").expect("Failed to create test model factory"))
 }
 
 /// Build a valid full `Config` for serve/search tests with explicit search params.
@@ -153,10 +153,6 @@ impl Embedder for FakeEmbedder {
 
     fn dims(&self) -> usize {
         self.dims
-    }
-
-    fn token_counter(&self) -> Box<dyn TokenCounter> {
-        Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter)
     }
 }
 

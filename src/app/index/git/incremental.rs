@@ -43,7 +43,7 @@ impl GitIndexer {
         let pb2 = self.console.progress(total_new_docs as u64, "Embedding documents");
         let indexable = super::prepare_git_documents(&new_docs, &vec![true; new_docs.len()]);
 
-        let mut pipeline = IndexingPipeline::new(&self.model_factory, &self.index_config)?;
+        let mut pipeline = IndexingPipeline::new(self.model_factory.as_ref(), &self.index_config)?;
         let (batch, dims) = pipeline.run(&indexable, Some(pb2.as_ref()))?;
 
         pb2.finish();

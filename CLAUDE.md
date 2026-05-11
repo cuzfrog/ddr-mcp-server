@@ -157,7 +157,7 @@ types:
 - a responsibility should belong to an earlier performer. E.g. if type `Config` can parse the configuration into ready-to-use types, it shouldn't pass raw strings to its clients. A producer should produce the best output for its consumers.
 
 ### Module visibility
-- A module should only has a trait and its factory method that are public.
+- A module should only has 1 trait and its factory method that are public.
 - For a single file module, all other things in the file should be file private.
 - For multi-file module, since each file is its own module, all other things must be file private or `pub(super)`
 - Unit tests should be collocated with its prod code.

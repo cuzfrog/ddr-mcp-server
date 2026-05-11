@@ -1,8 +1,8 @@
 use crate::config::IndexConfig;
 use crate::domain::{IndexKind, ChunkMetadata};
-use crate::index::embedder::Embedder;
 use crate::index::{IndexRepository, SourceIndexKind, SCHEMA_VERSION};
-use crate::app::index::chunking::DocumentChunker;
+use crate::app::index::chunking::counter::WhitespaceTokenCounter;
+use crate::app::index::chunking::{Chunker, DocumentChunker};
 use crate::app::index::pipeline::{IndexingPipeline, IndexableDocument};
 use crate::tests::fixtures::{make_temp_dir, read_index_at, FakeEmbedder};
 
@@ -50,11 +50,15 @@ fn test_index_and_store_round_trip() {
     let docs = vec![sample_doc_a(), sample_doc_b()];
     let config = test_config(&index_dir);
 
-    let mut embedder = FakeEmbedder::new();
-    let mut pipeline = IndexingPipeline::with_embedder(
-        Box::new(embedder),
+    let embedder = FakeEmbedder::new();
+    let chunker = Box::new(DocumentChunker::new(
         config.chunk_size,
         config.chunk_overlap,
+        Box::new(WhitespaceTokenCounter),
+    ));
+    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+        Box::new(embedder),
+        chunker,
     );
     let (batch, dims) = pipeline.run(&docs, None).unwrap();
 
@@ -89,11 +93,15 @@ fn test_empty_document_list_produces_empty_index() {
     let docs: Vec<IndexableDocument> = vec![];
     let config = test_config(&index_dir);
 
-    let mut embedder = FakeEmbedder::new();
-    let mut pipeline = IndexingPipeline::with_embedder(
-        Box::new(embedder),
+    let embedder = FakeEmbedder::new();
+    let chunker = Box::new(DocumentChunker::new(
         config.chunk_size,
         config.chunk_overlap,
+        Box::new(WhitespaceTokenCounter),
+    ));
+    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+        Box::new(embedder),
+        chunker,
     );
     let (batch, dims) = pipeline.run(&docs, None).unwrap();
 
@@ -121,19 +129,27 @@ fn test_vectors_are_deterministic() {
     let docs = vec![sample_doc_a()];
     let config = test_config(&index_dir);
 
-    let mut embedder = FakeEmbedder::new();
-    let mut pipeline = IndexingPipeline::with_embedder(
-        Box::new(embedder),
+    let embedder = FakeEmbedder::new();
+    let chunker = Box::new(DocumentChunker::new(
         config.chunk_size,
         config.chunk_overlap,
+        Box::new(WhitespaceTokenCounter),
+    ));
+    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+        Box::new(embedder),
+        chunker,
     );
     let (batch1, _dims) = pipeline.run(&docs, None).unwrap();
 
-    let mut embedder2 = FakeEmbedder::new();
-    let mut pipeline2 = IndexingPipeline::with_embedder(
-        Box::new(embedder2),
+    let embedder2 = FakeEmbedder::new();
+    let chunker2 = Box::new(DocumentChunker::new(
         config.chunk_size,
         config.chunk_overlap,
+        Box::new(WhitespaceTokenCounter),
+    ));
+    let mut pipeline2 = IndexingPipeline::with_embedder_and_chunker(
+        Box::new(embedder2),
+        chunker2,
     );
     let (batch2, _dims) = pipeline2.run(&docs, None).unwrap();
 
@@ -152,11 +168,15 @@ fn test_index_preserves_metadata_fields() {
     let docs = vec![sample_doc_a(), sample_doc_b()];
     let config = test_config(&index_dir);
 
-    let mut embedder = FakeEmbedder::new();
-    let mut pipeline = IndexingPipeline::with_embedder(
-        Box::new(embedder),
+    let embedder = FakeEmbedder::new();
+    let chunker = Box::new(DocumentChunker::new(
         config.chunk_size,
         config.chunk_overlap,
+        Box::new(WhitespaceTokenCounter),
+    ));
+    let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+        Box::new(embedder),
+        chunker,
     );
     let (batch, dims) = pipeline.run(&docs, None).unwrap();
 

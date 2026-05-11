@@ -1,4 +1,6 @@
-use crate::app::index::{IndexOutcome, IndexRequest, Indexer};
+use std::sync::Arc;
+
+use crate::app::index::{IndexKind, IndexOutcome, IndexRequest, Indexer};
 use crate::config::Config;
 use crate::index::model_factory::ModelFactory;
 use crate::support::ui::Console;
@@ -22,13 +24,13 @@ pub(crate) struct FileIndexer {
     pub file_config: crate::config::FileConfig,
     pub bm25_k1: f32,
     pub bm25_b: f32,
-    pub model_factory: ModelFactory,
+    pub model_factory: Arc<dyn ModelFactory>,
 }
 
-pub(crate) fn create_file_indexer(
+pub fn create_file_indexer(
     config: &Config,
     console: Box<dyn Console>,
-    model_factory: ModelFactory,
+    model_factory: Arc<dyn ModelFactory>,
 ) -> impl Indexer {
     let fc = config.file.as_ref().expect("FileIndexer requires file config");
     FileIndexer {
@@ -42,6 +44,10 @@ pub(crate) fn create_file_indexer(
 }
 
 impl Indexer for FileIndexer {
+    fn kind(&self) -> IndexKind {
+        IndexKind::File
+    }
+
     fn run(&self, request: &IndexRequest) -> anyhow::Result<IndexOutcome> {
         if request.rebuild {
             self.rebuild(request)
@@ -54,6 +60,8 @@ impl Indexer for FileIndexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::index::chunking::counter::WhitespaceTokenCounter;
+    use crate::app::index::chunking::{Chunker, DocumentChunker};
     use crate::app::index::pipeline::{IndexingPipeline, unique_doc_count};
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;
@@ -76,10 +84,14 @@ mod tests {
             kind: IndexKind::File,
             is_fresh: None,
         };
-        let mut pipeline = IndexingPipeline::with_embedder(
-            Box::new(embedder),
+        let chunker = Box::new(DocumentChunker::new(
             config.chunk_size,
             config.chunk_overlap,
+            Box::new(WhitespaceTokenCounter),
+        ));
+        let mut pipeline = IndexingPipeline::with_embedder_and_chunker(
+            Box::new(embedder),
+            chunker,
         );
         let (batch, dims) = pipeline.run(&[doc], None).unwrap();
         let doc_count = unique_doc_count(&batch.metadata);

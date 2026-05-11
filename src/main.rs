@@ -1,8 +1,10 @@
 use clap::{Parser, Subcommand};
-use docent_mcp::app::index::create_indexer;
+use docent_mcp::app::index::{create_file_indexer, create_git_indexer, Indexer};
 use docent_mcp::app::Application;
 use docent_mcp::config::Config;
+use docent_mcp::index::{create_model_factory, ModelFactory};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "docent", about = "MCP server for Document & Code History indexing and querying.")]
@@ -45,9 +47,27 @@ fn make_app(config: &Config) -> Application {
     let console = Box::new(docent_mcp::support::ui::create_console(config.verbose));
     let server_console = Box::new(docent_mcp::support::ui::create_console(config.verbose));
     let server = docent_mcp::app::serve::server::create_server(config.clone(), server_console);
-    let indexer = create_indexer(config)
-        .expect("Failed to create indexers");
-    Application::new(config.clone(), console, Box::new(server), indexer)
+
+    let factory: Arc<dyn ModelFactory> =
+        Arc::from(create_model_factory(&config.index.embedding_model)
+            .expect("Failed to create model factory"));
+    let mut indexers: Vec<Box<dyn Indexer>> = Vec::new();
+    if config.file.is_some() {
+        indexers.push(Box::new(create_file_indexer(
+            config,
+            Box::new(docent_mcp::support::ui::create_console(config.verbose)),
+            Arc::clone(&factory),
+        )));
+    }
+    if config.git.is_some() {
+        indexers.push(Box::new(create_git_indexer(
+            config,
+            Box::new(docent_mcp::support::ui::create_console(config.verbose)),
+            Arc::clone(&factory),
+        )));
+    }
+
+    Application::new(config.clone(), console, Box::new(server), indexers)
 }
 
 #[tokio::main]
