@@ -65,7 +65,7 @@ pub(crate) fn chunk_document(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::index::chunking::counter::create_test_token_counter;
+    use crate::tests::fixtures::create_test_token_counter;
 
     fn test_config() -> ChunkingConfig {
         ChunkingConfig {

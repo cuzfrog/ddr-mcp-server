@@ -78,18 +78,8 @@ impl Indexer for GitIndexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::index::pipeline::create_test_processor;
-    use crate::app::index::pipeline::IndexingProcessor;
     use crate::app::index::IndexKind;
-    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, RecordingUi};
-
-    fn test_processor() -> Box<dyn IndexingProcessor> {
-        let embedder = FakeEmbedder::new();
-        let chunker = crate::app::index::chunking::create_chunker(
-            256, 32, crate::app::index::chunking::counter::create_test_token_counter(),
-        );
-        create_test_processor(Box::new(embedder), chunker)
-    }
+    use crate::tests::fixtures::{make_temp_dir, RecordingUi, test_processor};
 
     #[test]
     fn incremental_without_existing_index_returns_error() {

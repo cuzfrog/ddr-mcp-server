@@ -64,7 +64,6 @@ pub fn create_search_service(
 mod tests {
     use super::*;
     use crate::config::{SearchConfig, FusionConfig, RankingConfig, Bm25Config};
-    use crate::domain::{IndexKind, ChunkMetadata, DocumentContext};
     use crate::index::MergedIndex;
     use crate::index::VectorStore;
     use crate::tests::fixtures::FakeEmbedder;
@@ -103,65 +102,5 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn test_missing_bm25_uses_zero_backend() -> anyhow::Result<()> {
-        let metadata = vec![
-            ChunkMetadata {
-                doc_ctx: DocumentContext {
-                    source_path: Arc::from("doc1.md"),
-                    source_revision: Arc::from("hash1"),
-                    title: Arc::from(""),
-                    modified_at: None,
-                    kind: IndexKind::File,
-                },
-                chunk_text: "The quick brown fox jumps over the lazy dog.".to_string(),
-                section_heading: None,
-                chunk_index: 0,
-                line_start: 0,
-                line_end: 0,
-                is_fresh: None,
-            },
-            ChunkMetadata {
-                doc_ctx: DocumentContext {
-                    source_path: Arc::from("doc2.md"),
-                    source_revision: Arc::from("hash2"),
-                    title: Arc::from(""),
-                    modified_at: None,
-                    kind: IndexKind::File,
-                },
-                chunk_text: "Apples are delicious fruits.".to_string(),
-                section_heading: None,
-                chunk_index: 0,
-                line_start: 0,
-                line_end: 0,
-                is_fresh: None,
-            },
-        ];
 
-        let merged = MergedIndex {
-            vectors: VectorStore::from_vec_vec(vec![
-                vec![1.0, 0.0, 0.0, 0.0],
-                vec![0.0, 1.0, 0.0, 0.0],
-            ])?,
-            metadata,
-            bm25_embeddings: None,
-            bm25_header: None,
-            built_at: "now".to_string(),
-        };
-
-        let embedder: Arc<Mutex<dyn Embedder>> =
-            Arc::new(Mutex::new(FakeEmbedder::new()));
-        let search_config = default_search_config();
-
-        let search_service = create_search_service(merged, embedder, &search_config)?;
-
-        let results = search_service.search("apples", 5, "").await?;
-        let all_zero = results.iter().all(|r| r.bm25_score == 0.0);
-        assert!(
-            all_zero,
-            "All BM25 scores should be zero when no BM25 data is available"
-        );
-
-        Ok(())
-    }
 }

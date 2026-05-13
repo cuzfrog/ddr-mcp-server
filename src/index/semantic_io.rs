@@ -115,27 +115,6 @@ pub(super) fn read_index(path: &Path) -> anyhow::Result<StoredIndex> {
     Ok(StoredIndex { header, vectors, metadata })
 }
 
-/// Write index into the given subdirectory (e.g. "file" or "git").
-#[cfg(test)]
-pub fn write_index_to(
-    persist_path: &Path,
-    subdir: &str,
-    header: &IndexHeader,
-    vectors: &VectorStore,
-    metadata: &[StoredChunkMetadata],
-) -> anyhow::Result<()> {
-    write_index(&persist_path.join(subdir), header, vectors, metadata)
-}
-
-/// Read index from a subdirectory. Returns `StoredIndex`.
-#[cfg(test)]
-pub fn read_subdir(
-    persist_path: &Path,
-    subdir: &str,
-) -> anyhow::Result<StoredIndex> {
-    read_index(&persist_path.join(subdir))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -751,6 +730,23 @@ mod tests {
         assert!(nested_path.join("metadata.bin").exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    fn write_index_to(
+        persist_path: &Path,
+        subdir: &str,
+        header: &IndexHeader,
+        vectors: &VectorStore,
+        metadata: &[StoredChunkMetadata],
+    ) -> anyhow::Result<()> {
+        write_index(&persist_path.join(subdir), header, vectors, metadata)
+    }
+
+    fn read_subdir(
+        persist_path: &Path,
+        subdir: &str,
+    ) -> anyhow::Result<StoredIndex> {
+        read_index(&persist_path.join(subdir))
     }
 
     #[test]

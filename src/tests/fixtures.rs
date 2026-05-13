@@ -1,12 +1,18 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::Mutex;
 
+use crate::app::index::chunking::counter::TokenCounter;
+use crate::app::index::chunking::{create_chunker, Chunk, Chunker};
+use crate::app::index::pipeline::{IndexingProcessor, IndexableDocument, IndexedBatch};
 use crate::config::{Config, FileConfig, GitConfig, IndexConfig};
 use crate::domain::ChunkMetadata;
+use crate::domain::IndexKind;
 use crate::index::embedder::Embedder;
 use crate::index::model_factory::{create_model_factory, ModelFactory};
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
+use crate::support::progress::ProgressSink;
 
 // ---------------------------------------------------------------------------
 // Config fixture helpers — produce valid config types without touching Config::default()
@@ -230,6 +236,138 @@ impl Embedder for FakeEmbedder {
     fn dims(&self) -> usize {
         self.dims
     }
+}
+
+// ---------------------------------------------------------------------------
+// Test token counter — whitespace-based counter for tests
+// ---------------------------------------------------------------------------
+
+pub fn create_test_token_counter() -> Box<dyn TokenCounter> {
+    Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter)
+}
+
+// ---------------------------------------------------------------------------
+// TestIndexingProcessor — lightweight indexing processor for tests
+// ---------------------------------------------------------------------------
+
+pub struct TestIndexingProcessor {
+    chunker: Box<dyn Chunker>,
+    embedder: Mutex<Box<dyn Embedder>>,
+}
+
+impl TestIndexingProcessor {
+    pub fn new(chunker: Box<dyn Chunker>, embedder: Box<dyn Embedder>) -> Self {
+        Self { chunker, embedder: Mutex::new(embedder) }
+    }
+}
+
+const BATCH_SIZE: usize = 64;
+
+impl IndexingProcessor for TestIndexingProcessor {
+    fn run(
+        &self,
+        docs: &[IndexableDocument],
+        _progress: Option<&dyn ProgressSink>,
+    ) -> anyhow::Result<(IndexedBatch, usize)> {
+        let mut all_chunks: Vec<(usize, Chunk)> = Vec::new();
+        for (i, doc) in docs.iter().enumerate() {
+            let chunks = self.chunker.chunk(&doc.body);
+            for chunk in chunks {
+                all_chunks.push((i, chunk));
+            }
+        }
+
+        let chunk_texts: Vec<&str> = all_chunks.iter().map(|(_, c)| c.text.as_str()).collect();
+
+        let mut all_vectors: Vec<Vec<f32>> = Vec::with_capacity(chunk_texts.len());
+        let mut embedder = self.embedder.lock().unwrap();
+        for batch in chunk_texts.chunks(BATCH_SIZE) {
+            let vectors = embedder
+                .embed(batch)
+                .map_err(|e| anyhow::anyhow!("Embedding operation failed: {}", e))?;
+            all_vectors.extend(vectors);
+        }
+        drop(embedder);
+
+        let mut batch_metadata: Vec<ChunkMetadata> = Vec::with_capacity(all_chunks.len());
+        for ((doc_index, chunk), _) in all_chunks.iter().zip(all_vectors.iter()) {
+            let doc = &docs[*doc_index];
+            let doc_ctx = doc.doc_context();
+            batch_metadata.push(ChunkMetadata {
+                doc_ctx,
+                chunk_text: chunk.text.clone(),
+                section_heading: chunk.section_heading.clone(),
+                chunk_index: chunk.chunk_index,
+                line_start: chunk.line_start,
+                line_end: chunk.line_end,
+                is_fresh: doc.is_fresh,
+            });
+        }
+
+        let batch = IndexedBatch {
+            vectors: all_vectors,
+            metadata: batch_metadata,
+        };
+        let dims = self.embedder.lock().unwrap().dims();
+        Ok((batch, dims))
+    }
+}
+
+/// Create a test processor with custom embedder and chunker.
+pub fn create_test_processor(
+    embedder: Box<dyn Embedder>,
+    chunker: Box<dyn Chunker>,
+) -> Box<dyn IndexingProcessor> {
+    Box::new(TestIndexingProcessor::new(chunker, embedder))
+}
+
+/// Create a test processor with a FakeEmbedder and a whitespace token counter.
+pub fn test_processor() -> Box<dyn IndexingProcessor> {
+    let embedder = Box::new(FakeEmbedder::new());
+    let chunker = create_chunker(256, 32, create_test_token_counter());
+    Box::new(TestIndexingProcessor::new(chunker, embedder))
+}
+
+// ---------------------------------------------------------------------------
+// create_minimal_file_index — build a single-file index for test use
+// ---------------------------------------------------------------------------
+
+/// Create a minimal File index at `persist_path` with one "test.md" document.
+pub fn create_minimal_file_index(persist_path: &Path) {
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist_path.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+
+    let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
+
+    let embedder = FakeEmbedder::new();
+    let doc = IndexableDocument {
+        source_path: "test.md".to_string(),
+        source_revision: "abc".to_string(),
+        title: "Test".to_string(),
+        body: "Hello world".to_string(),
+        modified_at: None,
+        kind: IndexKind::File,
+        is_fresh: None,
+    };
+    let chunker = create_chunker(
+        config.chunk_size,
+        config.chunk_overlap,
+        create_test_token_counter(),
+    );
+    let processor = create_test_processor(
+        Box::new(embedder),
+        chunker,
+    );
+    let (batch, dims) = processor.run(&[doc], None).unwrap();
+    let doc_count = ChunkMetadata::unique_count(&batch.metadata);
+    repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)
+        .unwrap();
 }
 
 // ---------------------------------------------------------------------------

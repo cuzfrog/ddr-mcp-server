@@ -94,7 +94,7 @@ mod tests {
     };
     use crate::index::VectorStore;
     use crate::tests::fixtures::{
-        make_temp_dir, serve_config_fixture, FakeEmbedder, RecordingUi,
+        make_temp_dir, serve_config_fixture, create_minimal_file_index, FakeEmbedder, RecordingUi,
     };
 
     struct FakeServeIndexAccess {
@@ -157,44 +157,6 @@ mod tests {
                 })
             }
         }
-    }
-
-    fn create_minimal_file_index(persist_path: &Path) {
-        let config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist_path.to_string_lossy().to_string(),
-            cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-
-        let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
-
-        let embedder = FakeEmbedder::new();
-        let doc = crate::domain::IndexableDocument {
-            source_path: "test.md".to_string(),
-            source_revision: "abc".to_string(),
-            title: "Test".to_string(),
-            body: "Hello world".to_string(),
-            modified_at: None,
-            kind: crate::domain::IndexKind::File,
-            is_fresh: None,
-        };
-
-        let chunker = crate::app::index::chunking::create_chunker(
-            config.chunk_size,
-            config.chunk_overlap,
-            crate::app::index::chunking::counter::create_test_token_counter(),
-        );
-        let processor = crate::app::index::pipeline::create_test_processor(
-            Box::new(embedder),
-            chunker,
-        );
-        let (batch, dims) = processor.run(&[doc], None).unwrap();
-        let doc_count = crate::domain::ChunkMetadata::unique_count(&batch.metadata);
-        repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)
-            .unwrap();
     }
 
     #[test]

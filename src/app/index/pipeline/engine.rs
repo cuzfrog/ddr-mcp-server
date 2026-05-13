@@ -29,14 +29,6 @@ pub fn create_processor(
     Ok(Box::new(ParallelBatchIndexingProcessor::new(factory, index_config)?))
 }
 
-#[cfg(test)]
-pub fn create_test_processor(
-    embedder: Box<dyn Embedder>,
-    chunker: Box<dyn Chunker>,
-) -> Box<dyn IndexingProcessor> {
-    Box::new(ParallelBatchIndexingProcessor::with_embedder_and_chunker(embedder, chunker))
-}
-
 struct ParallelBatchIndexingProcessor {
     chunker: Box<dyn Chunker>,
     embedder: Mutex<Box<dyn Embedder>>,
@@ -51,13 +43,6 @@ impl ParallelBatchIndexingProcessor {
         Ok(Self { chunker, embedder: Mutex::new(embedder) })
     }
 
-    #[cfg(test)]
-    pub fn with_embedder_and_chunker(
-        embedder: Box<dyn Embedder>,
-        chunker: Box<dyn Chunker>,
-    ) -> Self {
-        Self { chunker, embedder: Mutex::new(embedder) }
-    }
 }
 
 impl IndexingProcessor for ParallelBatchIndexingProcessor {

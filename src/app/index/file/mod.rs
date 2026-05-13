@@ -62,20 +62,12 @@ impl Indexer for FileIndexer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::index::chunking::counter::create_test_token_counter;
     use crate::app::index::chunking::create_chunker;
-    use crate::app::index::pipeline::{create_test_processor, IndexingProcessor};
     use crate::domain::ChunkMetadata;
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;
     use crate::index::{IndexRepository, SourceIndexKind};
-    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder};
-
-    fn test_processor() -> Box<dyn IndexingProcessor> {
-        let embedder = FakeEmbedder::new();
-        let chunker = create_chunker(256, 32, create_test_token_counter());
-        create_test_processor(Box::new(embedder), chunker)
-    }
+    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, test_processor, create_test_token_counter, create_test_processor};
 
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();

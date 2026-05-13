@@ -67,3 +67,137 @@ impl IndexMerger {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::domain::{ChunkMetadata, DocumentContext, IndexKind};
+    use crate::index::bm25_header::Bm25IndexHeader;
+    use crate::index::semantic_header::IndexHeader;
+    use crate::index::semantic_store::VectorStore;
+    use crate::index::source_index::{Bm25SubIndex, SubIndex};
+    use super::*;
+
+    fn dummy_header(built_at: &str) -> IndexHeader {
+        IndexHeader {
+            schema_version: 7,
+            embedding_model: "test".to_string(),
+            embedding_dims: 4,
+            chunk_size: 256,
+            chunk_overlap: 32,
+            built_at: built_at.to_string(),
+            doc_count: 1,
+            chunk_count: 1,
+            last_indexed_commit: None,
+        }
+    }
+
+    fn dummy_metadata() -> Vec<ChunkMetadata> {
+        vec![ChunkMetadata {
+            doc_ctx: DocumentContext::default(),
+            chunk_text: "chunk text".to_string(),
+            section_heading: None,
+            chunk_index: 0,
+            line_start: 0,
+            line_end: 0,
+            is_fresh: None,
+        }]
+    }
+
+    fn dummy_bm25() -> Bm25SubIndex {
+        Bm25SubIndex {
+            header: Bm25IndexHeader {
+                schema_version: 1,
+                k1: 1.2,
+                b: 0.75,
+                avgdl: 10.0,
+                chunk_count: 1,
+            },
+            embeddings: vec![bm25::Embedding(vec![])],
+        }
+    }
+
+    #[test]
+    fn test_merge_both_present() {
+        let file = SubIndex {
+            header: dummy_header("2026-01-01"),
+            vectors: VectorStore::from_vec_vec(vec![vec![1.0, 0.0, 0.0, 0.0]]).unwrap(),
+            metadata: dummy_metadata(),
+            bm25: Some(dummy_bm25()),
+        };
+        let git = SubIndex {
+            header: dummy_header("2026-01-02"),
+            vectors: VectorStore::from_vec_vec(vec![vec![0.0, 1.0, 0.0, 0.0]]).unwrap(),
+            metadata: dummy_metadata(),
+            bm25: Some(dummy_bm25()),
+        };
+
+        let merged = IndexMerger::merge(Some(file), Some(git)).unwrap();
+        assert_eq!(merged.vectors.len(), 2);
+        assert_eq!(merged.metadata.len(), 2);
+        assert!(merged.bm25_embeddings.is_some());
+        assert!(merged.bm25_header.is_some());
+        // built_at picks file when both present
+        assert_eq!(merged.built_at, "2026-01-01");
+    }
+
+    #[test]
+    fn test_merge_file_only() {
+        let file = SubIndex {
+            header: dummy_header("2026-01-01"),
+            vectors: VectorStore::from_vec_vec(vec![vec![1.0, 0.0, 0.0, 0.0]]).unwrap(),
+            metadata: dummy_metadata(),
+            bm25: Some(dummy_bm25()),
+        };
+
+        let merged = IndexMerger::merge(Some(file), None).unwrap();
+        assert_eq!(merged.vectors.len(), 1);
+        assert_eq!(merged.metadata.len(), 1);
+        assert!(merged.bm25_embeddings.is_some());
+        assert_eq!(merged.built_at, "2026-01-01");
+    }
+
+    #[test]
+    fn test_merge_git_only() {
+        let git = SubIndex {
+            header: dummy_header("2026-01-02"),
+            vectors: VectorStore::from_vec_vec(vec![vec![0.0, 1.0, 0.0, 0.0]]).unwrap(),
+            metadata: dummy_metadata(),
+            bm25: Some(dummy_bm25()),
+        };
+
+        let merged = IndexMerger::merge(None, Some(git)).unwrap();
+        assert_eq!(merged.vectors.len(), 1);
+        assert_eq!(merged.metadata.len(), 1);
+        assert_eq!(merged.built_at, "2026-01-02");
+    }
+
+    #[test]
+    fn test_merge_both_none() {
+        let merged = IndexMerger::merge(None, None).unwrap();
+        assert_eq!(merged.vectors.len(), 0);
+        assert_eq!(merged.metadata.len(), 0);
+        assert!(merged.bm25_embeddings.is_none());
+        assert!(merged.bm25_header.is_none());
+        assert!(merged.built_at.is_empty());
+    }
+
+    #[test]
+    fn test_merge_bm25_absent() {
+        let file = SubIndex {
+            header: dummy_header("2026-01-01"),
+            vectors: VectorStore::from_vec_vec(vec![vec![1.0, 0.0, 0.0, 0.0]]).unwrap(),
+            metadata: dummy_metadata(),
+            bm25: None,
+        };
+        let git = SubIndex {
+            header: dummy_header("2026-01-02"),
+            vectors: VectorStore::from_vec_vec(vec![vec![0.0, 1.0, 0.0, 0.0]]).unwrap(),
+            metadata: dummy_metadata(),
+            bm25: None,
+        };
+
+        let merged = IndexMerger::merge(Some(file), Some(git)).unwrap();
+        assert!(merged.bm25_embeddings.is_none());
+        assert!(merged.bm25_header.is_none());
+    }
+}

@@ -1,10 +1,17 @@
-use crate::config::IndexConfig;
-use crate::domain::{IndexKind, ChunkMetadata};
-use crate::index::{IndexRepository, SourceIndexKind, SCHEMA_VERSION};
-use crate::app::index::chunking::counter::create_test_token_counter;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use crate::app::index::chunking::create_chunker;
-use crate::app::index::pipeline::{create_test_processor, IndexableDocument};
-use crate::tests::fixtures::{make_temp_dir, read_index_at, FakeEmbedder};
+use crate::app::index::pipeline::IndexableDocument;
+use crate::config::IndexConfig;
+use crate::config::{SearchConfig, FusionConfig, RankingConfig, Bm25Config};
+use crate::domain::{IndexKind, ChunkMetadata, DocumentContext};
+use crate::index::{IndexRepository, SourceIndexKind, read_bm25_index};
+use crate::index::{MergedIndex, VectorStore};
+use crate::index::embedder::Embedder;
+use crate::app::serve::search::{SearchService, create_search_service};
+use crate::tests::fixtures::{make_temp_dir, read_index_at, create_test_token_counter, create_test_processor, create_minimal_file_index, FakeEmbedder};
 
 fn test_config(index_dir: &std::path::Path) -> IndexConfig {
     IndexConfig {
@@ -72,7 +79,7 @@ fn test_index_and_store_round_trip() {
 
     let (header, vectors, metadata) = read_index_at(&index_dir);
 
-    assert_eq!(header.schema_version, SCHEMA_VERSION);
+    assert_eq!(header.schema_version, 7); // SCHEMA_VERSION
     assert_eq!(header.embedding_dims, 4);
     assert_eq!(header.doc_count, 2);
     assert_eq!(vectors.len(), metadata.len());
@@ -176,4 +183,299 @@ fn test_index_preserves_metadata_fields() {
     assert_eq!(&*b_meta[0].doc_ctx.source_revision, "hash2");
 
     let _ = std::fs::remove_dir_all(&base);
+}
+
+// ---------------------------------------------------------------------------
+// BM25 repair tests (moved from index::repository)
+// ---------------------------------------------------------------------------
+
+fn create_file_index_without_bm25(persist_path: &Path) {
+    create_minimal_file_index(persist_path);
+    let bm25_dir = persist_path.join("file").join("bm25");
+    let _ = std::fs::remove_dir_all(&bm25_dir);
+}
+
+fn create_git_index_without_bm25(persist_path: &Path) {
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist_path.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+    let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
+
+    let embedder = FakeEmbedder::new();
+    let doc = IndexableDocument {
+        source_path: "git-file.md".to_string(),
+        source_revision: "def".to_string(),
+        title: "Git Test".to_string(),
+        body: "Git commit content for testing.".to_string(),
+        modified_at: None,
+        kind: IndexKind::Git,
+        is_fresh: None,
+    };
+
+    let chunker = create_chunker(
+        config.chunk_size,
+        config.chunk_overlap,
+        create_test_token_counter(),
+    );
+    let processor = create_test_processor(
+        Box::new(embedder),
+        chunker,
+    );
+    let (batch, dims) = processor.run(&[doc], None).unwrap();
+    let doc_count = ChunkMetadata::unique_count(&batch.metadata);
+    repo.store(SourceIndexKind::Git, &batch, dims, doc_count, None)
+        .unwrap();
+
+    let bm25_dir = persist_path.join("git").join("bm25");
+    let _ = std::fs::remove_dir_all(&bm25_dir);
+}
+
+#[test]
+fn file_only_missing_bm25_rebuilds_on_load() {
+    let persist = make_temp_dir("rebuild_file_bm25");
+    create_file_index_without_bm25(&persist);
+    create_git_index_without_bm25(&persist);
+    assert!(
+        !persist.join("file").join("bm25").join("header.json").exists(),
+        "BM25 should be absent before load"
+    );
+
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+    let repo = IndexRepository::new(&persist, &config, 1.2, 0.75);
+    let result = repo.load_merged().unwrap();
+
+    assert!(
+        persist.join("file").join("bm25").join("header.json").exists(),
+        "BM25 should be created after load"
+    );
+
+    assert!(
+        result.notices.iter().any(|n| n.contains("Rebuilt BM25 index for file/")),
+        "Expected rebuild notice for file/, got: {:?}",
+        result.notices
+    );
+
+    let (_header, _embeddings) = read_bm25_index(&persist.join("file").join("bm25")).unwrap();
+    assert!(!_embeddings.is_empty(), "BM25 embeddings should not be empty");
+
+    let _ = std::fs::remove_dir_all(&persist);
+}
+
+#[test]
+fn git_only_missing_bm25_rebuilds_on_load() {
+    let persist = make_temp_dir("rebuild_git_bm25");
+    create_git_index_without_bm25(&persist);
+
+    assert!(
+        !persist.join("git").join("bm25").join("header.json").exists(),
+        "BM25 should be absent before load"
+    );
+
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+    let repo = IndexRepository::new(&persist, &config, 1.2, 0.75);
+    let result = repo.load_merged().unwrap();
+
+    assert!(
+        persist.join("git").join("bm25").join("header.json").exists(),
+        "BM25 should be created after load"
+    );
+
+    assert!(
+        result.notices.iter().any(|n| n.contains("Rebuilt BM25 index for git/")),
+        "Expected rebuild notice for git/, got: {:?}",
+        result.notices
+    );
+
+    let _ = std::fs::remove_dir_all(&persist);
+}
+
+#[test]
+fn dual_source_one_side_missing_bm25() {
+    let persist = make_temp_dir("rebuild_dual_bm25");
+    create_minimal_file_index(&persist);
+    create_git_index_without_bm25(&persist);
+
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+    let repo = IndexRepository::new(&persist, &config, 1.2, 0.75);
+    let result = repo.load_merged().unwrap();
+
+    assert!(
+        persist.join("file").join("bm25").join("header.json").exists(),
+        "File BM25 should still exist"
+    );
+    assert!(
+        persist.join("git").join("bm25").join("header.json").exists(),
+        "Git BM25 should have been created"
+    );
+
+    assert_eq!(result.notices.len(), 1, "Expected exactly 1 rebuild notice");
+    assert!(
+        result.notices[0].contains("Rebuilt BM25 index for git/"),
+        "Expected git rebuild notice, got: {}",
+        result.notices[0]
+    );
+
+    let _ = std::fs::remove_dir_all(&persist);
+}
+
+#[test]
+fn idempotent_bm25_repair() {
+    let persist = make_temp_dir("rebuild_idempotent");
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+
+    let repo = IndexRepository::new(&persist, &config, 1.2, 0.75);
+
+    let embedder = FakeEmbedder::new();
+    let doc = IndexableDocument {
+        source_path: "test.md".to_string(),
+        source_revision: "abc".to_string(),
+        title: "Test".to_string(),
+        body: "Hello world".to_string(),
+        modified_at: None,
+        kind: IndexKind::File,
+        is_fresh: None,
+    };
+    let chunker = create_chunker(
+        config.chunk_size,
+        config.chunk_overlap,
+        create_test_token_counter(),
+    );
+    let processor = create_test_processor(
+        Box::new(embedder),
+        chunker,
+    );
+    let (batch, dims) = processor.run(&[doc], None).unwrap();
+    let doc_count = ChunkMetadata::unique_count(&batch.metadata);
+    repo.store(SourceIndexKind::File, &batch, dims, doc_count, None).unwrap();
+    let bm25_dir = persist.join("file").join("bm25");
+    let _ = std::fs::remove_dir_all(&bm25_dir);
+
+    let first = repo.load_merged().unwrap();
+    assert_eq!(first.notices.len(), 1, "First load should emit 1 notice");
+
+    let second = repo.load_merged().unwrap();
+    assert!(
+        second.notices.is_empty(),
+        "Second load should NOT emit any notices, got: {:?}",
+        second.notices
+    );
+
+    let _ = std::fs::remove_dir_all(&persist);
+}
+
+// ---------------------------------------------------------------------------
+// Search integration test (moved from serve::search::mod)
+// ---------------------------------------------------------------------------
+
+fn default_search_config() -> SearchConfig {
+    SearchConfig {
+        ranking: RankingConfig {
+            same_src_score_decay: 0.9,
+            file_hint_boost: 1.5,
+        },
+        fusion: FusionConfig {
+            strategy: "rrf".to_string(),
+            rrf_k: 60.0,
+            semantic_weight: 0.7,
+        },
+        bm25: Bm25Config {
+            k1: 1.2,
+            b: 0.75,
+        },
+    }
+}
+
+#[tokio::test]
+async fn test_missing_bm25_uses_zero_backend() -> anyhow::Result<()> {
+    let metadata = vec![
+        ChunkMetadata {
+            doc_ctx: DocumentContext {
+                source_path: Arc::from("doc1.md"),
+                source_revision: Arc::from("hash1"),
+                title: Arc::from(""),
+                modified_at: None,
+                kind: IndexKind::File,
+            },
+            chunk_text: "The quick brown fox jumps over the lazy dog.".to_string(),
+            section_heading: None,
+            chunk_index: 0,
+            line_start: 0,
+            line_end: 0,
+            is_fresh: None,
+        },
+        ChunkMetadata {
+            doc_ctx: DocumentContext {
+                source_path: Arc::from("doc2.md"),
+                source_revision: Arc::from("hash2"),
+                title: Arc::from(""),
+                modified_at: None,
+                kind: IndexKind::File,
+            },
+            chunk_text: "Apples are delicious fruits.".to_string(),
+            section_heading: None,
+            chunk_index: 0,
+            line_start: 0,
+            line_end: 0,
+            is_fresh: None,
+        },
+    ];
+
+    let merged = MergedIndex {
+        vectors: VectorStore::from_vec_vec(vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+        ])?,
+        metadata,
+        bm25_embeddings: None,
+        bm25_header: None,
+        built_at: "now".to_string(),
+    };
+
+    let embedder: Arc<Mutex<dyn Embedder>> =
+        Arc::new(Mutex::new(FakeEmbedder::new()));
+    let search_config = default_search_config();
+
+    let search_service = create_search_service(merged, embedder, &search_config)?;
+
+    let results = search_service.search("apples", 5, "").await?;
+    let all_zero = results.iter().all(|r| r.bm25_score == 0.0);
+    assert!(
+        all_zero,
+        "All BM25 scores should be zero when no BM25 data is available"
+    );
+
+    Ok(())
 }
