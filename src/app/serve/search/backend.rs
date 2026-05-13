@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::index::embedder::Embedder;
+use crate::index::MergedIndex;
 use crate::index::VectorStore;
 
 pub trait ScoreBackend: Send + Sync {
@@ -95,6 +96,29 @@ impl ScoreBackend for ZeroScoreBackend {
     fn score(&self, _query: &str) -> anyhow::Result<Vec<f32>> {
         Ok(vec![0.0f32; self.chunk_count])
     }
+}
+
+pub(super) fn build_backends(
+    merged: &MergedIndex,
+    embedder: Arc<Mutex<dyn Embedder>>,
+) -> (Arc<dyn ScoreBackend>, Arc<dyn ScoreBackend>) {
+    let vector_store = Arc::new(merged.vectors.clone());
+    let semantic = Arc::new(VectorScoreBackend::new(
+        embedder,
+        vector_store,
+    )) as Arc<dyn ScoreBackend>;
+
+    let bm25: Arc<dyn ScoreBackend> = match (&merged.bm25_embeddings, &merged.bm25_header) {
+        (Some(embeddings), Some(header)) => {
+            let backend = build_bm25_backend(embeddings, header.k1, header.b, header.avgdl);
+            Arc::new(backend)
+        }
+        _ => Arc::new(ZeroScoreBackend {
+            chunk_count: merged.metadata.len(),
+        }),
+    };
+
+    (semantic, bm25)
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {

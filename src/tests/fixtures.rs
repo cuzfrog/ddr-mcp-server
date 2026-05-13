@@ -103,6 +103,77 @@ pub fn make_temp_dir(name: &str) -> PathBuf {
     path
 }
 
+// ---------------------------------------------------------------------------
+// Git test helpers — in-repo helpers for git indexing tests
+// ---------------------------------------------------------------------------
+
+/// Initialize a bare-minimum git repository with a single initial commit
+/// and a configured user name/email. Returns (Repository, branch_name).
+pub fn init_test_repo(dir: &std::path::Path) -> (git2::Repository, String) {
+    let repo = git2::Repository::init(dir).expect("init repo");
+    {
+        let mut cfg = repo.config().expect("repo config");
+        cfg.set_str("user.name", "test").expect("set user.name");
+        cfg.set_str("user.email", "test@test.com")
+            .expect("set user.email");
+    }
+
+    let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+
+    let initial_commit_oid = {
+        let builder = repo.treebuilder(None).expect("treebuilder");
+        let oid = builder.write().expect("write tree");
+        let empty_tree = repo.find_tree(oid).expect("find tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &empty_tree, &[])
+            .expect("initial commit")
+    };
+    let _ = initial_commit_oid;
+
+    let branch_name = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .unwrap_or_else(|| "main".to_string());
+
+    (repo, branch_name)
+}
+
+/// Commit a file to the repository at `rel_path` with `content` and `message`.
+pub fn commit_file(
+    repo: &git2::Repository,
+    rel_path: &str,
+    content: &str,
+    message: &str,
+) -> git2::Oid {
+    let workdir = repo.workdir().expect("workdir");
+    let full_path = workdir.join(rel_path);
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dirs");
+    }
+    std::fs::write(&full_path, content).expect("write file");
+
+    let mut index = repo.index().expect("index");
+    index.add_path(std::path::Path::new(rel_path)).expect("add to index");
+    index.write().expect("write index");
+
+    let tree_id = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_id).expect("find tree");
+
+    let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+
+    let parent_commits: Vec<git2::Commit> = match repo.head() {
+        Ok(head) => {
+            let parent = head.peel_to_commit().expect("peel to commit");
+            vec![parent]
+        }
+        Err(_) => vec![],
+    };
+    let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)
+        .expect("commit")
+}
+
 /// Read an index from disk, returning header, vectors, and metadata.
 pub fn read_index_at(
     path: &std::path::Path,

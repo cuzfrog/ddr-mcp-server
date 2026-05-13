@@ -24,91 +24,119 @@ pub fn resolve_head_commit(repo_path: &Path, branch: &str) -> anyhow::Result<Str
     Ok(oid.to_string())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn process_commit(
-    repo: &git2::Repository,
-    revwalk_result: Result<git2::Oid, git2::Error>,
-    git_config: &GitConfig,
-    rebuild: bool,
-    last_indexed_commit: Option<&str>,
-    verbose: bool,
-    progress: Option<&dyn ProgressSink>,
-    commit_count: &mut usize,
-    documents: &mut Vec<crate::app::index::git::extract::GitDocument>,
-) -> anyhow::Result<bool> {
-    let oid = revwalk_result?;
-    let commit = repo.find_commit(oid)?;
-    let commit_hash = oid.to_string();
+enum WalkAction {
+    Continue(Vec<crate::app::index::git::extract::GitDocument>),
+    Stop,
+}
 
-    if git_config.depth_limit >= 0 && *commit_count >= git_config.depth_limit as usize {
-        return Ok(true);
+struct CommitWalker<'a> {
+    repo: &'a git2::Repository,
+    git_config: &'a GitConfig,
+    rebuild: bool,
+    last_indexed_commit: Option<&'a str>,
+    verbose: bool,
+    progress: Option<&'a dyn ProgressSink>,
+    commit_count: usize,
+}
+
+impl CommitWalker<'_> {
+    fn process(&mut self, oid: git2::Oid) -> anyhow::Result<WalkAction> {
+        let commit = self.repo.find_commit(oid)?;
+        let commit_hash = oid.to_string();
+
+        if self.should_stop(&commit_hash) {
+            return Ok(WalkAction::Stop);
+        }
+
+        self.report_progress(&commit, &commit_hash);
+        let docs = self.extract_diffs(&commit, &commit_hash)?;
+        self.commit_count += 1;
+
+        Ok(WalkAction::Continue(docs))
     }
 
-    if !rebuild {
-        if let Some(last_hash) = last_indexed_commit {
-            if commit_hash == last_hash {
-                return Ok(true);
+    fn should_stop(&self, commit_hash: &str) -> bool {
+        if self.git_config.depth_limit >= 0 && self.commit_count >= self.git_config.depth_limit as usize {
+            return true;
+        }
+
+        if !self.rebuild {
+            if let Some(last_hash) = self.last_indexed_commit {
+                if commit_hash == last_hash {
+                    return true;
+                }
             }
         }
+
+        false
     }
 
-    if verbose {
-        let summary = commit.summary().unwrap_or("(no message)");
-        let msg = format!(
-            "commit {}: {}",
-            &commit_hash[..7.min(commit_hash.len())],
-            summary
-        );
-        if let Some(p) = progress {
-            p.tick_msg(&msg);
+    fn report_progress(&self, commit: &git2::Commit<'_>, commit_hash: &str) {
+        if self.verbose {
+            let summary = commit.summary().unwrap_or("(no message)");
+            let msg = format!(
+                "commit {}: {}",
+                &commit_hash[..7.min(commit_hash.len())],
+                summary
+            );
+            if let Some(p) = self.progress {
+                p.tick_msg(&msg);
+            } else {
+                println!("  {msg}");
+            }
+        } else if let Some(p) = self.progress {
+            p.tick(1);
+        }
+    }
+
+    fn extract_diffs(
+        &self,
+        commit: &git2::Commit<'_>,
+        commit_hash: &str,
+    ) -> anyhow::Result<Vec<crate::app::index::git::extract::GitDocument>> {
+        let mut documents = Vec::new();
+
+        let commit_tree = commit.tree()?;
+        let parent_tree: Option<git2::Tree<'_>> = if commit.parent_count() > 0 {
+            commit.parent(0)?.tree().ok()
         } else {
-            println!("  {msg}");
-        }
-    } else if let Some(p) = progress {
-        p.tick(1);
-    }
-
-    let commit_tree = commit.tree()?;
-    let parent_tree: Option<git2::Tree<'_>> = if commit.parent_count() > 0 {
-        commit.parent(0)?.tree().ok()
-    } else {
-        None
-    };
-
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)?;
-    let author_secs = commit.time().seconds();
-    let author_date = crate::support::time::unix_to_rfc3339(author_secs, 0)
-        .unwrap_or_else(|| "unknown".to_string());
-    let title = commit.summary().unwrap_or("").to_string();
-
-    for (i, delta) in diff.deltas().enumerate() {
-        let file_path = match delta.new_file().path() {
-            Some(p) => crate::support::fs::path_to_string(p),
-            None => continue,
+            None
         };
 
-        if !matches_any_pattern(&file_path, &git_config.glob_patterns) {
-            continue;
+        let diff = self.repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit_tree), None)?;
+        let author_secs = commit.time().seconds();
+        let author_date = crate::support::time::unix_to_rfc3339(author_secs, 0)
+            .unwrap_or_else(|| "unknown".to_string());
+        let title = commit.summary().unwrap_or("").to_string();
+
+        for (i, delta) in diff.deltas().enumerate() {
+            let file_path = match delta.new_file().path() {
+                Some(p) => crate::support::fs::path_to_string(p),
+                None => continue,
+            };
+
+            if !matches_any_pattern(&file_path, &self.git_config.glob_patterns) {
+                continue;
+            }
+
+            let mut patch = match git2::Patch::from_diff(&diff, i)? {
+                Some(p) => p,
+                None => continue,
+            };
+
+            let diff_text = String::from_utf8_lossy(&patch.to_buf()?).to_string();
+
+            documents.push(crate::app::index::git::extract::GitDocument {
+                commit_hash: commit_hash.to_string(),
+                title: title.clone(),
+                file_path,
+                diff: diff_text,
+                author_date: author_date.clone(),
+            });
         }
 
-        let mut patch = match git2::Patch::from_diff(&diff, i)? {
-            Some(p) => p,
-            None => continue,
-        };
-
-        let diff_text = String::from_utf8_lossy(&patch.to_buf()?).to_string();
-
-        documents.push(crate::app::index::git::extract::GitDocument {
-            commit_hash: commit_hash.clone(),
-            title: title.clone(),
-            file_path,
-            diff: diff_text,
-            author_date: author_date.clone(),
-        });
+        Ok(documents)
     }
-
-    *commit_count += 1;
-    Ok(false)
 }
 
 pub fn index_git_history(
@@ -124,23 +152,22 @@ pub fn index_git_history(
     revwalk.push(tip_oid)?;
     revwalk.set_sorting(git2::Sort::TIME)?;
 
-    let mut documents = Vec::new();
-    let mut commit_count: usize = 0;
+    let mut walker = CommitWalker {
+        repo: &repo,
+        git_config,
+        rebuild,
+        last_indexed_commit,
+        verbose,
+        progress,
+        commit_count: 0,
+    };
 
+    let mut documents = Vec::new();
     for revwalk_result in revwalk {
-        let should_stop = process_commit(
-            &repo,
-            revwalk_result,
-            git_config,
-            rebuild,
-            last_indexed_commit,
-            verbose,
-            progress,
-            &mut commit_count,
-            &mut documents,
-        )?;
-        if should_stop {
-            break;
+        let oid = revwalk_result?;
+        match walker.process(oid)? {
+            WalkAction::Continue(mut docs) => documents.append(&mut docs),
+            WalkAction::Stop => break,
         }
     }
 
@@ -148,78 +175,9 @@ pub fn index_git_history(
 }
 
 #[cfg(test)]
-pub(crate) mod test_helpers {
-    use std::path::Path;
-
-    pub fn init_test_repo(dir: &Path) -> (git2::Repository, String) {
-        let repo = git2::Repository::init(dir).expect("init repo");
-        {
-            let mut cfg = repo.config().expect("repo config");
-            cfg.set_str("user.name", "test").expect("set user.name");
-            cfg.set_str("user.email", "test@test.com")
-                .expect("set user.email");
-        }
-
-        let sig = git2::Signature::now("test", "test@test.com").expect("signature");
-
-        let initial_commit_oid = {
-            let builder = repo.treebuilder(None).expect("treebuilder");
-            let oid = builder.write().expect("write tree");
-            let empty_tree = repo.find_tree(oid).expect("find tree");
-            repo.commit(Some("HEAD"), &sig, &sig, "initial", &empty_tree, &[])
-                .expect("initial commit")
-        };
-        let _ = initial_commit_oid;
-
-        let branch_name = repo
-            .head()
-            .ok()
-            .and_then(|h| h.shorthand().map(|s| s.to_string()))
-            .unwrap_or_else(|| "main".to_string());
-
-        (repo, branch_name)
-    }
-
-    pub fn commit_file(
-        repo: &git2::Repository,
-        rel_path: &str,
-        content: &str,
-        message: &str,
-    ) -> git2::Oid {
-        let workdir = repo.workdir().expect("workdir");
-        let full_path = workdir.join(rel_path);
-        if let Some(parent) = full_path.parent() {
-            std::fs::create_dir_all(parent).expect("create parent dirs");
-        }
-        std::fs::write(&full_path, content).expect("write file");
-
-        let mut index = repo.index().expect("index");
-        index.add_path(Path::new(rel_path)).expect("add to index");
-        index.write().expect("write index");
-
-        let tree_id = index.write_tree().expect("write tree");
-        let tree = repo.find_tree(tree_id).expect("find tree");
-
-        let sig = git2::Signature::now("test", "test@test.com").expect("signature");
-
-        let parent_commits: Vec<git2::Commit> = match repo.head() {
-            Ok(head) => {
-                let parent = head.peel_to_commit().expect("peel to commit");
-                vec![parent]
-            }
-            Err(_) => vec![],
-        };
-        let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-
-        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)
-            .expect("commit")
-    }
-}
-
-#[cfg(test)]
 mod tests {
-    use super::test_helpers::*;
     use crate::config::GitConfig;
+    use crate::tests::fixtures::{commit_file, init_test_repo};
     use tempfile::TempDir;
 
     #[test]

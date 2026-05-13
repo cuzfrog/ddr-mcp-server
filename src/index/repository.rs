@@ -8,7 +8,7 @@ use crate::index::merger::IndexMerger;
 use crate::index::sub_index::SubIndex;
 use crate::index::vector_store::VectorStore;
 use crate::index::SourceIndexKind;
-use crate::app::index::pipeline::IndexedBatch;
+use crate::domain::IndexedBatch;
 
 pub struct MergedIndex {
     pub(crate) vectors: VectorStore,
@@ -182,7 +182,7 @@ impl IndexRepository {
 mod tests {
     use std::path::Path;
 
-    use crate::app::index::pipeline::IndexableDocument;
+    use crate::domain::IndexableDocument;
     use crate::config::IndexConfig;
     use crate::domain::{ChunkMetadata, IndexKind};
     use crate::index::{

@@ -13,12 +13,12 @@ use crate::index::MergedIndex;
 
 pub use types::SearchResult;
 
-pub(super) use backend::{ScoreBackend, VectorScoreBackend, ZeroScoreBackend};
+pub(super) use backend::ScoreBackend;
 pub(super) use fusion::create_fusion;
 
 pub(super) use ranking::DecayRanker;
 
-use backend::build_bm25_backend;
+use backend::build_backends;
 use orchestrator::HybridSearchService;
 
 #[async_trait::async_trait]
@@ -36,27 +36,7 @@ pub fn create_search_service(
     embedder: Arc<Mutex<dyn Embedder>>,
     search_config: &SearchConfig,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
-    let vector_store = Arc::new(merged.vectors);
-    let semantic_backend = Arc::new(VectorScoreBackend::new(
-        embedder,
-        Arc::clone(&vector_store),
-    )) as Arc<dyn ScoreBackend>;
-
-    let bm25_backend: Arc<dyn ScoreBackend> = match (&merged.bm25_embeddings, &merged.bm25_header) {
-        (Some(embeddings), Some(header)) => {
-            let backend = build_bm25_backend(
-                embeddings,
-                header.k1,
-                header.b,
-                header.avgdl,
-            );
-            Arc::new(backend)
-        }
-        _ => {
-            let chunk_count = merged.metadata.len();
-            Arc::new(ZeroScoreBackend { chunk_count })
-        }
-    };
+    let (semantic_backend, bm25_backend) = build_backends(&merged, embedder);
 
     let fusion = create_fusion(
         &search_config.fusion.strategy,

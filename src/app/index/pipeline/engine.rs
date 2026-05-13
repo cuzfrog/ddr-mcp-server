@@ -6,7 +6,7 @@ use crate::config::IndexConfig;
 use crate::domain::ChunkMetadata;
 use crate::index::embedder::{create_embedder, Embedder};
 use crate::index::model_factory::ModelFactory;
-use crate::app::index::pipeline::types::{IndexableDocument, IndexedBatch};
+use crate::domain::{IndexableDocument, IndexedBatch};
 use crate::support::progress::ProgressSink;
 
 use rayon::prelude::*;
