@@ -39,16 +39,17 @@ pub fn estimate_git_index_size(commit_count: usize, dims: usize) -> u64 {
 mod tests {
     use super::*;
     use crate::config::GitConfig;
+    use crate::tests::fixtures::{commit_file, init_test_repo};
     use tempfile::TempDir;
 
     #[test]
     fn test_estimate_commit_count_basic() {
         let tmp = TempDir::new().expect("temp dir");
-        let (repo, branch_name) = crate::app::index::git::history::test_helpers::init_test_repo(tmp.path());
+        let (repo, branch_name) = init_test_repo(tmp.path());
 
         for i in 0..5 {
             let filename = format!("f{}.txt", i);
-            crate::app::index::git::history::test_helpers::commit_file(
+            commit_file(
                 &repo, &filename, &format!("content {}", i), &format!("commit {}", i),
             );
         }
@@ -68,11 +69,11 @@ mod tests {
     #[test]
     fn test_estimate_commit_count_depth_limit() {
         let tmp = TempDir::new().expect("temp dir");
-        let (repo, branch_name) = crate::app::index::git::history::test_helpers::init_test_repo(tmp.path());
+        let (repo, branch_name) = init_test_repo(tmp.path());
 
         for i in 0..10 {
             let filename = format!("f{}.txt", i);
-            crate::app::index::git::history::test_helpers::commit_file(
+            commit_file(
                 &repo, &filename, &format!("content {}", i), &format!("commit {}", i),
             );
         }

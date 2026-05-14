@@ -1,6 +1,6 @@
-use crate::index::header::IndexHeader;
+use crate::index::semantic_header::IndexHeader;
 use crate::index::stored_metadata::StoredChunkMetadata;
-use crate::index::vector_store::{StoredIndex, VectorStore};
+use crate::index::semantic_store::{StoredIndex, VectorStore};
 use std::path::Path;
 
 /// Write the index directory: `header.json`, `vectors.bin`, and `metadata.bin`.
@@ -8,7 +8,7 @@ use std::path::Path;
 /// Creates `path` (and any missing parents) if it does not exist (`create_dir_all`
 /// is idempotent).  Does **not** validate that `vectors.len()` equals
 /// `metadata.len()` or that dimensions are consistent — the caller is responsible.
-pub fn write_index(
+pub(super) fn write_index(
     path: &Path,
     header: &IndexHeader,
     vectors: &VectorStore,
@@ -107,33 +107,12 @@ fn validate_consistency(header: &IndexHeader, vectors: &VectorStore, metadata: &
     Ok(())
 }
 
-pub fn read_index(path: &Path) -> anyhow::Result<StoredIndex> {
+pub(super) fn read_index(path: &Path) -> anyhow::Result<StoredIndex> {
     let header = read_header(path)?;
     let vectors = read_vectors(path, &header)?;
     let metadata = read_metadata(path)?;
     validate_consistency(&header, &vectors, &metadata)?;
     Ok(StoredIndex { header, vectors, metadata })
-}
-
-/// Write index into the given subdirectory (e.g. "file" or "git").
-#[cfg(test)]
-pub fn write_index_to(
-    persist_path: &Path,
-    subdir: &str,
-    header: &IndexHeader,
-    vectors: &VectorStore,
-    metadata: &[StoredChunkMetadata],
-) -> anyhow::Result<()> {
-    write_index(&persist_path.join(subdir), header, vectors, metadata)
-}
-
-/// Read index from a subdirectory. Returns `StoredIndex`.
-#[cfg(test)]
-pub fn read_subdir(
-    persist_path: &Path,
-    subdir: &str,
-) -> anyhow::Result<StoredIndex> {
-    read_index(&persist_path.join(subdir))
 }
 
 #[cfg(test)]
@@ -751,6 +730,23 @@ mod tests {
         assert!(nested_path.join("metadata.bin").exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    fn write_index_to(
+        persist_path: &Path,
+        subdir: &str,
+        header: &IndexHeader,
+        vectors: &VectorStore,
+        metadata: &[StoredChunkMetadata],
+    ) -> anyhow::Result<()> {
+        write_index(&persist_path.join(subdir), header, vectors, metadata)
+    }
+
+    fn read_subdir(
+        persist_path: &Path,
+        subdir: &str,
+    ) -> anyhow::Result<StoredIndex> {
+        read_index(&persist_path.join(subdir))
     }
 
     #[test]

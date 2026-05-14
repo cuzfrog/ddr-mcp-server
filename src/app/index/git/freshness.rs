@@ -25,15 +25,16 @@ mod tests {
     use super::*;
     use crate::config::GitConfig;
     use crate::app::index::git::extract::GitDocument;
+    use crate::tests::fixtures::{commit_file, init_test_repo};
     use tempfile::TempDir;
 
     #[test]
     fn test_freshness_computation() {
         let tmp = TempDir::new().expect("temp dir");
-        let (repo, branch_name) = crate::app::index::git::history::test_helpers::init_test_repo(tmp.path());
+        let (repo, branch_name) = init_test_repo(tmp.path());
 
-        crate::app::index::git::history::test_helpers::commit_file(&repo, "main.rs", "fn old() {}", "first commit");
-        crate::app::index::git::history::test_helpers::commit_file(&repo, "main.rs", "fn new() {}", "second commit");
+        commit_file(&repo, "main.rs", "fn old() {}", "first commit");
+        commit_file(&repo, "main.rs", "fn new() {}", "second commit");
 
         let git_config = GitConfig {
             depth_limit: -1,

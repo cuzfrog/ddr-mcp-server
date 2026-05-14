@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand};
+use docent_mcp::app::index::pipeline::create_processor;
+use docent_mcp::app::index::{create_file_indexer, create_git_indexer, Indexer};
 use docent_mcp::app::Application;
 use docent_mcp::config::Config;
+use docent_mcp::index::{create_model_factory, ModelFactory};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "docent", about = "MCP server for Document & Code History indexing and querying.")]
@@ -40,17 +44,37 @@ struct ServeArgs {
     config: PathBuf,
 }
 
-fn make_app(verbose: bool) -> Application {
-    Application::new(
-        Box::new(docent_mcp::support::ui::create_console(verbose)),
-        Box::new(docent_mcp::app::serve::server::create_server()),
-        Box::new(docent_mcp::app::index::file::create_file_indexer(
-            Box::new(docent_mcp::support::ui::create_console(verbose)),
-        )),
-        Box::new(docent_mcp::app::index::git::create_git_indexer(
-            Box::new(docent_mcp::support::ui::create_console(verbose)),
-        )),
-    )
+fn make_app(config: &Config) -> Application {
+    let console = Box::new(docent_mcp::support::ui::create_console(config.verbose));
+    let server_console = Box::new(docent_mcp::support::ui::create_console(config.verbose));
+    let server = docent_mcp::app::serve::server::create_server(config.clone(), server_console);
+
+    let factory: Arc<dyn ModelFactory> =
+        Arc::from(create_model_factory(&config.index.embedding_model, &PathBuf::from(&config.index.cache_dir))
+            .expect("Failed to create model factory"));
+    let mut indexers: Vec<Box<dyn Indexer>> = Vec::new();
+    if config.file.is_some() {
+        let proc = create_processor(factory.as_ref(), &config.index)
+            .expect("Failed to create indexing processor");
+        indexers.push(Box::new(create_file_indexer(
+            config,
+            Box::new(docent_mcp::support::ui::create_console(config.verbose)),
+            Arc::clone(&factory),
+            proc,
+        )));
+    }
+    if config.git.is_some() {
+        let proc = create_processor(factory.as_ref(), &config.index)
+            .expect("Failed to create indexing processor");
+        indexers.push(Box::new(create_git_indexer(
+            config,
+            Box::new(docent_mcp::support::ui::create_console(config.verbose)),
+            Arc::clone(&factory),
+            proc,
+        )));
+    }
+
+    Application::new(config.clone(), console, Box::new(server), indexers)
 }
 
 #[tokio::main]
@@ -58,24 +82,30 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::IndexFile(args) => {
-            let mut config = Config::load(&args.config)?;
+            let mut config = Config::load(&args.config, args.verbose)?;
             config.git = None;
-            make_app(args.verbose).run_index(&config, args.path, args.rebuild, args.verbose)?;
+            make_app(&config).run_index(args.path, args.rebuild)?;
         }
         Commands::IndexGit(args) => {
-            let mut config = Config::load(&args.config)?;
+            let mut config = Config::load(&args.config, args.verbose)?;
             config.file = None;
-            make_app(args.verbose).run_index(&config, args.path, args.rebuild, args.verbose)?;
+            make_app(&config).run_index(args.path, args.rebuild)?;
         }
         Commands::Serve(args) => {
-            let config = Config::load(&args.config)?;
-            make_app(false).run_serve(&config).await?;
+            let config = Config::load(&args.config, false)?;
+            make_app(&config).run_serve().await?;
         }
-        Commands::ListModels => make_app(false).list_models(),
-        Commands::Init => make_app(false).run_init()?,
+        Commands::ListModels => {
+            let console = docent_mcp::support::ui::create_console(false);
+            docent_mcp::app::list_models::list_models(&console);
+        }
+        Commands::Init => {
+            let console = docent_mcp::support::ui::create_console(false);
+            docent_mcp::app::init::run_init(&console)?;
+        }
         Commands::Index(args) => {
-            let config = Config::load(&args.config)?;
-            make_app(args.verbose).run_index(&config, args.path, args.rebuild, args.verbose)?;
+            let config = Config::load(&args.config, args.verbose)?;
+            make_app(&config).run_index(args.path, args.rebuild)?;
         }
     }
     Ok(())

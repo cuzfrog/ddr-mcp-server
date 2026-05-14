@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Context;
 use async_trait::async_trait;
 use axum::Router;
@@ -5,40 +7,33 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 
-use crate::app::serve::service_builder::HybridServiceBuilder;
-use crate::app::serve::ServeIndexAccess;
-use crate::app::serve::ServeIndexAccessImpl;
+use crate::app::serve::{build_search_stack, SearchStack, ServeIndexAccessImpl};
 use crate::config::Config;
 use crate::mcp::DocentMcpServer;
 use crate::mcp::SearchExecutor;
-use crate::support::ui::Console;
+use crate::support::ui::{Console, create_console};
 
 #[async_trait]
 pub trait Server: Send + Sync {
-    async fn serve(
-        &self,
-        config: &Config,
-        console: &dyn Console,
-    ) -> anyhow::Result<()>;
+    async fn serve(&self) -> anyhow::Result<()>;
 }
 
-pub fn create_server() -> impl Server {
-    TokioHttpServer
+pub fn create_server(config: Config, console: Box<dyn Console>) -> impl Server {
+    TokioHttpServer { config, console }
 }
 
-struct TokioHttpServer;
+struct TokioHttpServer {
+    config: Config,
+    console: Box<dyn Console>,
+}
 
 #[async_trait]
 impl Server for TokioHttpServer {
-    async fn serve(
-        &self,
-        config: &Config,
-        console: &dyn Console,
-    ) -> anyhow::Result<()> {
-        let index_access = ServeIndexAccessImpl;
-        let router = prepare_router(&index_access, config, console)?;
+    async fn serve(&self) -> anyhow::Result<()> {
+        let stack = build_search_stack(&ServeIndexAccessImpl, &self.config, &*self.console)?;
+        let router = prepare_router(&stack)?;
 
-        let addr = format!("127.0.0.1:{}", config.server.port);
+        let addr = format!("127.0.0.1:{}", self.config.server.port);
         let listener = tokio::net::TcpListener::bind(&addr)
             .await
             .context("Failed to bind TCP listener")?;
@@ -46,13 +41,13 @@ impl Server for TokioHttpServer {
             .local_addr()
             .context("Failed to get local address")?;
 
-        console.info(&format!(
+        self.console.info(&format!(
             "docent server listening on http://{} (open in browser for web UI)",
             local_addr,
         ));
 
         axum::serve(listener, router)
-            .with_graceful_shutdown(super::bootstrap::shutdown_signal())
+            .with_graceful_shutdown(shutdown_signal())
             .await
             .context("Server error")?;
 
@@ -60,47 +55,18 @@ impl Server for TokioHttpServer {
     }
 }
 
-fn prepare_router(
-    index_access: &dyn ServeIndexAccess,
-    config: &Config,
-    console: &dyn Console,
-) -> anyhow::Result<Router> {
-    let persist_path = config.persist_path_buf();
-
-    if let Some(info) = index_access.check_size(&persist_path, config.index.max_size_mb)? {
-        console.warn(&format!(
-            "The total index is {:.1} MB, which exceeds the configured limit of {} MB.",
-            info.total_bytes as f64 / (1024.0 * 1024.0),
-            config.index.max_size_mb
-        ));
-        if persist_path.join("file").exists() {
-            console.warn(&format!("  file/ subdirectory: {:.1} MB", info.file_bytes as f64 / (1024.0 * 1024.0)));
-        }
-        if persist_path.join("git").exists() {
-            console.warn(&format!("  git/ subdirectory:  {:.1} MB", info.git_bytes as f64 / (1024.0 * 1024.0)));
-        }
-        if !console.confirm("Continue?")? {
-            anyhow::bail!("Aborted by user.");
-        }
+async fn shutdown_signal() {
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        let console = create_console(false);
+        Console::info(&console, &format!("Shutdown signal error: {}", e));
+    } else {
+        let console = create_console(false);
+        Console::info(&console, "Shutting down...");
     }
+}
 
-    let result = index_access
-        .load_merged(&persist_path, &config.index, config.search.bm25.k1, config.search.bm25.b)
-        .map_err(|e| anyhow::anyhow!("Failed to load merged index: {}", e))?;
-    for notice in &result.notices {
-        console.info(notice);
-    }
-    let merged = result.merged;
-
-    let builder = HybridServiceBuilder;
-    let embedder = builder.build_embedder(&config.index.embedding_model)?;
-    let search_service = std::sync::Arc::new(builder.build(
-        merged,
-        embedder,
-        &config.search,
-    )?);
-
-    let server = DocentMcpServer { search_executor: SearchExecutor::new(search_service) };
+fn prepare_router(stack: &SearchStack) -> anyhow::Result<Router> {
+    let server = DocentMcpServer { search_executor: SearchExecutor::new(Arc::clone(&stack.search_service)) };
     let service: StreamableHttpService<DocentMcpServer, LocalSessionManager> =
         StreamableHttpService::new(
             {
@@ -119,16 +85,16 @@ fn prepare_router(
 mod tests {
     use std::path::Path;
 
+    use crate::app::serve::build_search_stack;
     use crate::app::serve::server::prepare_router;
     use crate::app::serve::ServeIndexAccess;
-    use crate::config::{Config, IndexConfig};
-    use crate::index::embedder::Embedder;
+    use crate::config::IndexConfig;
     use crate::index::{
         IndexRepository, IndexSizeInfo, LoadMergedResult, MergedIndex, SourceIndexKind,
     };
     use crate::index::VectorStore;
     use crate::tests::fixtures::{
-        make_temp_dir, serve_config_fixture, FakeEmbedder, RecordingUi,
+        make_temp_dir, serve_config_fixture, create_minimal_file_index, FakeEmbedder, RecordingUi,
     };
 
     struct FakeServeIndexAccess {
@@ -193,38 +159,6 @@ mod tests {
         }
     }
 
-
-
-    fn create_minimal_file_index(persist_path: &Path) {
-        let config = IndexConfig {
-            embedding_model: "BGESmallENV15Q".to_string(),
-            persist_path: persist_path.to_string_lossy().to_string(),
-            chunk_size: 256,
-            chunk_overlap: 32,
-            max_size_mb: 512,
-        };
-
-        let repo = IndexRepository::new(persist_path, &config);
-
-        let mut embedder = FakeEmbedder::new();
-        let doc = crate::app::index::pipeline::IndexableDocument {
-            source_path: "test.md".to_string(),
-            source_revision: "abc".to_string(),
-            title: "Test".to_string(),
-            body: "Hello world".to_string(),
-            modified_at: None,
-            kind: crate::domain::ChunkKind::File,
-            is_fresh: None,
-        };
-
-        let tok = embedder.token_counter();
-        let pipeline = crate::app::index::pipeline::IndexingPipeline::new(&config, tok);
-        let batch = pipeline.run(&[doc], &mut embedder, None, 1.2, 0.75).unwrap();
-        let doc_count = crate::app::index::pipeline::unique_doc_count(&batch.metadata);
-        repo.store(SourceIndexKind::File, &batch, embedder.dims(), doc_count, None)
-            .unwrap();
-    }
-
     #[test]
     fn oversized_index_aborts_when_not_confirmed() {
         let persist = make_temp_dir("serve_oversized_abort");
@@ -232,7 +166,7 @@ mod tests {
         let index_access = FakeServeIndexAccess::new().with_oversized();
         let console = RecordingUi::never_confirm();
 
-        let result = prepare_router(&index_access, &config, &console);
+        let result = build_search_stack(&index_access, &config, &console);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Aborted"), "Expected abort error, got: {}", err);
@@ -250,7 +184,7 @@ mod tests {
         let index_access = FakeServeIndexAccess::new().with_oversized();
         let console = RecordingUi::always_confirm();
 
-        let result = prepare_router(&index_access, &oversized_config, &console);
+        let result = build_search_stack(&index_access, &oversized_config, &console);
         assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);
@@ -263,7 +197,7 @@ mod tests {
         let index_access = FakeServeIndexAccess::new().with_load_error();
         let console = RecordingUi::always_confirm();
 
-        let result = prepare_router(&index_access, &config, &console);
+        let result = build_search_stack(&index_access, &config, &console);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let display = err.to_string();
@@ -290,8 +224,25 @@ mod tests {
         let index_access = FakeServeIndexAccess::new();
         let console = RecordingUi::always_confirm();
 
-        let result = prepare_router(&index_access, &config, &console);
+        let result = build_search_stack(&index_access, &config, &console);
         assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
+
+        let _ = std::fs::remove_dir_all(&persist);
+    }
+
+    #[test]
+    fn prepare_router_works_with_search_stack() {
+        let persist = make_temp_dir("serve_prepare_router");
+        create_minimal_file_index(&persist);
+        let config = serve_config_fixture(&persist);
+        let index_access = FakeServeIndexAccess::new();
+        let console = RecordingUi::always_confirm();
+
+        let stack = build_search_stack(&index_access, &config, &console)
+            .expect("build_search_stack should succeed");
+
+        let result = prepare_router(&stack);
+        assert!(result.is_ok(), "Expected prepare_router to succeed, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);
     }

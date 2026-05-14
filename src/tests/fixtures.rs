@@ -1,11 +1,18 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use crate::app::index::chunking::TokenCounter;
+use crate::app::index::chunking::counter::TokenCounter;
+use crate::app::index::chunking::{create_chunker, Chunk, Chunker};
+use crate::app::index::pipeline::{IndexingProcessor, IndexableDocument, IndexedBatch};
 use crate::config::{Config, FileConfig, GitConfig, IndexConfig};
 use crate::domain::ChunkMetadata;
+use crate::domain::IndexKind;
 use crate::index::embedder::Embedder;
+use crate::index::model_factory::{create_model_factory, ModelFactory};
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
+use crate::support::progress::ProgressSink;
 
 // ---------------------------------------------------------------------------
 // Config fixture helpers — produce valid config types without touching Config::default()
@@ -16,6 +23,7 @@ pub fn file_index_fixtures(persist: &Path, globs: &[&str]) -> (IndexConfig, File
     let index_config = IndexConfig {
         embedding_model: "BGESmallENV15Q".to_string(),
         persist_path: persist.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
         chunk_size: 256,
         chunk_overlap: 32,
         max_size_mb: 512,
@@ -33,6 +41,7 @@ pub fn git_index_fixtures(persist: &Path, globs: &[&str]) -> (IndexConfig, GitCo
     let index_config = IndexConfig {
         embedding_model: "BGESmallENV15Q".to_string(),
         persist_path: persist.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
         chunk_size: 256,
         chunk_overlap: 32,
         max_size_mb: 512,
@@ -46,12 +55,18 @@ pub fn git_index_fixtures(persist: &Path, globs: &[&str]) -> (IndexConfig, GitCo
     (index_config, git_config)
 }
 
+pub fn test_model_factory() -> Arc<dyn ModelFactory> {
+    let cache_dir = std::env::temp_dir().join("docent_test_cache");
+    Arc::from(create_model_factory("BGESmallENV15Q", &cache_dir).expect("Failed to create test model factory"))
+}
+
 /// Build a valid full `Config` for serve/search tests with explicit search params.
 pub fn serve_config_fixture(persist: &Path) -> Config {
     Config {
         index: IndexConfig {
             embedding_model: "BGESmallENV15Q".to_string(),
             persist_path: persist.to_string_lossy().to_string(),
+            cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
             chunk_size: 256,
             chunk_overlap: 32,
             max_size_mb: 512,
@@ -77,6 +92,7 @@ pub fn serve_config_fixture(persist: &Path) -> Config {
         },
         git: None,
         file: None,
+        ..Default::default()
     }
 }
 
@@ -93,6 +109,77 @@ pub fn make_temp_dir(name: &str) -> PathBuf {
     path
 }
 
+// ---------------------------------------------------------------------------
+// Git test helpers — in-repo helpers for git indexing tests
+// ---------------------------------------------------------------------------
+
+/// Initialize a bare-minimum git repository with a single initial commit
+/// and a configured user name/email. Returns (Repository, branch_name).
+pub fn init_test_repo(dir: &std::path::Path) -> (git2::Repository, String) {
+    let repo = git2::Repository::init(dir).expect("init repo");
+    {
+        let mut cfg = repo.config().expect("repo config");
+        cfg.set_str("user.name", "test").expect("set user.name");
+        cfg.set_str("user.email", "test@test.com")
+            .expect("set user.email");
+    }
+
+    let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+
+    let initial_commit_oid = {
+        let builder = repo.treebuilder(None).expect("treebuilder");
+        let oid = builder.write().expect("write tree");
+        let empty_tree = repo.find_tree(oid).expect("find tree");
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &empty_tree, &[])
+            .expect("initial commit")
+    };
+    let _ = initial_commit_oid;
+
+    let branch_name = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .unwrap_or_else(|| "main".to_string());
+
+    (repo, branch_name)
+}
+
+/// Commit a file to the repository at `rel_path` with `content` and `message`.
+pub fn commit_file(
+    repo: &git2::Repository,
+    rel_path: &str,
+    content: &str,
+    message: &str,
+) -> git2::Oid {
+    let workdir = repo.workdir().expect("workdir");
+    let full_path = workdir.join(rel_path);
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dirs");
+    }
+    std::fs::write(&full_path, content).expect("write file");
+
+    let mut index = repo.index().expect("index");
+    index.add_path(std::path::Path::new(rel_path)).expect("add to index");
+    index.write().expect("write index");
+
+    let tree_id = index.write_tree().expect("write tree");
+    let tree = repo.find_tree(tree_id).expect("find tree");
+
+    let sig = git2::Signature::now("test", "test@test.com").expect("signature");
+
+    let parent_commits: Vec<git2::Commit> = match repo.head() {
+        Ok(head) => {
+            let parent = head.peel_to_commit().expect("peel to commit");
+            vec![parent]
+        }
+        Err(_) => vec![],
+    };
+    let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
+
+    repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)
+        .expect("commit")
+}
+
 /// Read an index from disk, returning header, vectors, and metadata.
 pub fn read_index_at(
     path: &std::path::Path,
@@ -100,11 +187,12 @@ pub fn read_index_at(
     let config = IndexConfig {
         embedding_model: "BGESmallENV15Q".to_string(),
         persist_path: path.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
         chunk_size: 256,
         chunk_overlap: 32,
         max_size_mb: 512,
     };
-    let repo = IndexRepository::new(path, &config);
+    let repo = IndexRepository::new(path, &config, 1.2, 0.75);
     let stored = repo.load_one(SourceIndexKind::File).unwrap();
     (stored.header, stored.vectors, stored.metadata)
 }
@@ -148,10 +236,138 @@ impl Embedder for FakeEmbedder {
     fn dims(&self) -> usize {
         self.dims
     }
+}
 
-    fn token_counter(&self) -> Box<dyn TokenCounter> {
-        Box::new(crate::app::index::chunking::WhitespaceTokenCounter)
+// ---------------------------------------------------------------------------
+// Test token counter — whitespace-based counter for tests
+// ---------------------------------------------------------------------------
+
+pub fn create_test_token_counter() -> Box<dyn TokenCounter> {
+    Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter)
+}
+
+// ---------------------------------------------------------------------------
+// TestIndexingProcessor — lightweight indexing processor for tests
+// ---------------------------------------------------------------------------
+
+pub struct TestIndexingProcessor {
+    chunker: Box<dyn Chunker>,
+    embedder: Mutex<Box<dyn Embedder>>,
+}
+
+impl TestIndexingProcessor {
+    pub fn new(chunker: Box<dyn Chunker>, embedder: Box<dyn Embedder>) -> Self {
+        Self { chunker, embedder: Mutex::new(embedder) }
     }
+}
+
+const BATCH_SIZE: usize = 64;
+
+impl IndexingProcessor for TestIndexingProcessor {
+    fn run(
+        &self,
+        docs: &[IndexableDocument],
+        _progress: Option<&dyn ProgressSink>,
+    ) -> anyhow::Result<(IndexedBatch, usize)> {
+        let mut all_chunks: Vec<(usize, Chunk)> = Vec::new();
+        for (i, doc) in docs.iter().enumerate() {
+            let chunks = self.chunker.chunk(&doc.body);
+            for chunk in chunks {
+                all_chunks.push((i, chunk));
+            }
+        }
+
+        let chunk_texts: Vec<&str> = all_chunks.iter().map(|(_, c)| c.text.as_str()).collect();
+
+        let mut all_vectors: Vec<Vec<f32>> = Vec::with_capacity(chunk_texts.len());
+        let mut embedder = self.embedder.lock().unwrap();
+        for batch in chunk_texts.chunks(BATCH_SIZE) {
+            let vectors = embedder
+                .embed(batch)
+                .map_err(|e| anyhow::anyhow!("Embedding operation failed: {}", e))?;
+            all_vectors.extend(vectors);
+        }
+        drop(embedder);
+
+        let mut batch_metadata: Vec<ChunkMetadata> = Vec::with_capacity(all_chunks.len());
+        for ((doc_index, chunk), _) in all_chunks.iter().zip(all_vectors.iter()) {
+            let doc = &docs[*doc_index];
+            let doc_ctx = doc.doc_context();
+            batch_metadata.push(ChunkMetadata {
+                doc_ctx,
+                chunk_text: chunk.text.clone(),
+                section_heading: chunk.section_heading.clone(),
+                chunk_index: chunk.chunk_index,
+                line_start: chunk.line_start,
+                line_end: chunk.line_end,
+                is_fresh: doc.is_fresh,
+            });
+        }
+
+        let batch = IndexedBatch {
+            vectors: all_vectors,
+            metadata: batch_metadata,
+        };
+        let dims = self.embedder.lock().unwrap().dims();
+        Ok((batch, dims))
+    }
+}
+
+/// Create a test processor with custom embedder and chunker.
+pub fn create_test_processor(
+    embedder: Box<dyn Embedder>,
+    chunker: Box<dyn Chunker>,
+) -> Box<dyn IndexingProcessor> {
+    Box::new(TestIndexingProcessor::new(chunker, embedder))
+}
+
+/// Create a test processor with a FakeEmbedder and a whitespace token counter.
+pub fn test_processor() -> Box<dyn IndexingProcessor> {
+    let embedder = Box::new(FakeEmbedder::new());
+    let chunker = create_chunker(256, 32, create_test_token_counter());
+    Box::new(TestIndexingProcessor::new(chunker, embedder))
+}
+
+// ---------------------------------------------------------------------------
+// create_minimal_file_index — build a single-file index for test use
+// ---------------------------------------------------------------------------
+
+/// Create a minimal File index at `persist_path` with one "test.md" document.
+pub fn create_minimal_file_index(persist_path: &Path) {
+    let config = IndexConfig {
+        embedding_model: "BGESmallENV15Q".to_string(),
+        persist_path: persist_path.to_string_lossy().to_string(),
+        cache_dir: std::env::temp_dir().join("docent_cache").to_string_lossy().to_string(),
+        chunk_size: 256,
+        chunk_overlap: 32,
+        max_size_mb: 512,
+    };
+
+    let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
+
+    let embedder = FakeEmbedder::new();
+    let doc = IndexableDocument {
+        source_path: "test.md".to_string(),
+        source_revision: "abc".to_string(),
+        title: "Test".to_string(),
+        body: "Hello world".to_string(),
+        modified_at: None,
+        kind: IndexKind::File,
+        is_fresh: None,
+    };
+    let chunker = create_chunker(
+        config.chunk_size,
+        config.chunk_overlap,
+        create_test_token_counter(),
+    );
+    let processor = create_test_processor(
+        Box::new(embedder),
+        chunker,
+    );
+    let (batch, dims) = processor.run(&[doc], None).unwrap();
+    let doc_count = ChunkMetadata::unique_count(&batch.metadata);
+    repo.store(SourceIndexKind::File, &batch, dims, doc_count, None)
+        .unwrap();
 }
 
 // ---------------------------------------------------------------------------

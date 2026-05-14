@@ -1,8 +1,12 @@
-use crate::app::index::chunking::{self, Chunk, ChunkingConfig};
+use std::sync::Mutex;
+
+use crate::app::index::chunking::counter::create_token_counter;
+use crate::app::index::chunking::{create_chunker, Chunk, Chunker};
 use crate::config::IndexConfig;
 use crate::domain::ChunkMetadata;
-use crate::index::embedder::Embedder;
-use crate::app::index::pipeline::types::{Bm25IndexBuilder, IndexableDocument, IndexedBatch};
+use crate::index::embedder::{create_embedder, Embedder};
+use crate::index::model_factory::ModelFactory;
+use crate::domain::{IndexableDocument, IndexedBatch};
 use crate::support::progress::ProgressSink;
 
 use rayon::prelude::*;
@@ -10,36 +14,49 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const BATCH_SIZE: usize = 64;
 
-pub struct IndexingPipeline {
-    config: ChunkingConfig,
-    token_counter: Box<dyn crate::app::index::chunking::TokenCounter>,
-}
-
-impl IndexingPipeline {
-    pub fn new(config: &IndexConfig, token_counter: Box<dyn crate::app::index::chunking::TokenCounter>) -> Self {
-        let chunking_config = ChunkingConfig {
-            chunk_size: config.chunk_size,
-            chunk_overlap: config.chunk_overlap,
-        };
-        Self {
-            config: chunking_config,
-            token_counter,
-        }
-    }
-
-    pub fn run(
+pub trait IndexingProcessor: Send + Sync {
+    fn run(
         &self,
         docs: &[IndexableDocument],
-        embedder: &mut dyn Embedder,
         progress: Option<&dyn ProgressSink>,
-        bm25_k1: f32,
-        bm25_b: f32,
-    ) -> anyhow::Result<IndexedBatch> {
+    ) -> anyhow::Result<(IndexedBatch, usize)>;
+}
+
+pub fn create_processor(
+    factory: &dyn ModelFactory,
+    index_config: &IndexConfig,
+) -> anyhow::Result<Box<dyn IndexingProcessor>> {
+    Ok(Box::new(ParallelBatchIndexingProcessor::new(factory, index_config)?))
+}
+
+struct ParallelBatchIndexingProcessor {
+    chunker: Box<dyn Chunker>,
+    embedder: Mutex<Box<dyn Embedder>>,
+}
+
+impl ParallelBatchIndexingProcessor {
+    pub fn new(factory: &dyn ModelFactory, index_config: &IndexConfig) -> anyhow::Result<Self> {
+        let token_counter = create_token_counter(factory.tokenizer());
+        let chunker = create_chunker(index_config.chunk_size, index_config.chunk_overlap, token_counter);
+        let (model, dims) = factory.build_model()?;
+        let embedder = create_embedder(model, dims);
+        Ok(Self { chunker, embedder: Mutex::new(embedder) })
+    }
+
+}
+
+impl IndexingProcessor for ParallelBatchIndexingProcessor {
+    fn run(
+        &self,
+        docs: &[IndexableDocument],
+        progress: Option<&dyn ProgressSink>,
+    ) -> anyhow::Result<(IndexedBatch, usize)> {
         let all_chunks = self.chunk_documents(docs, progress);
 
         let chunk_texts: Vec<&str> = all_chunks.iter().map(|(_, c)| c.text.as_str()).collect();
 
         let mut all_vectors: Vec<Vec<f32>> = Vec::with_capacity(chunk_texts.len());
+        let mut embedder = self.embedder.lock().unwrap();
         for batch in chunk_texts.chunks(BATCH_SIZE) {
             let batch_size = batch.len() as u64;
             let vectors = embedder
@@ -50,6 +67,7 @@ impl IndexingPipeline {
             }
             all_vectors.extend(vectors);
         }
+        drop(embedder);
 
         let mut batch_metadata: Vec<ChunkMetadata> = Vec::with_capacity(all_chunks.len());
         for ((doc_index, chunk), _) in all_chunks.iter().zip(all_vectors.iter()) {
@@ -66,22 +84,16 @@ impl IndexingPipeline {
             });
         }
 
-        let (bm25_embeddings, bm25_avgdl) = Bm25IndexBuilder {
-            k1: bm25_k1,
-            b: bm25_b,
-        }
-        .build(&chunk_texts);
-
-        Ok(IndexedBatch {
+        let batch = IndexedBatch {
             vectors: all_vectors,
             metadata: batch_metadata,
-            bm25_embeddings,
-            bm25_k1,
-            bm25_b,
-            bm25_avgdl,
-        })
+        };
+        let dims = self.embedder.lock().unwrap().dims();
+        Ok((batch, dims))
     }
+}
 
+impl ParallelBatchIndexingProcessor {
     fn chunk_documents(
         &self,
         docs: &[IndexableDocument],
@@ -98,7 +110,7 @@ impl IndexingPipeline {
             .par_iter()
             .enumerate()
             .map(|(i, doc)| {
-                let chunks = chunking::chunk_document(&doc.body, &self.config, &*self.token_counter);
+                let chunks = self.chunker.chunk(&doc.body);
                 let _ = doc_chunk_progress.fetch_add(1, Ordering::Relaxed);
                 DocChunksResult {
                     doc_index: i,
@@ -118,15 +130,5 @@ impl IndexingPipeline {
             }
         }
         all_chunks
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pipeline_batch_size() {
-        assert_eq!(BATCH_SIZE, 64);
     }
 }

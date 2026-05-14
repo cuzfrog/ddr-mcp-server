@@ -1,49 +1,49 @@
 use std::sync::Arc;
 
-use crate::domain::{ChunkKind, ChunkMetadata, DocumentContext};
+use crate::domain::{IndexKind, ChunkMetadata, DocumentContext};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum StoredChunkKind {
+pub(super) enum StoredChunkKind {
     File,
     Git,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct StoredChunkMetadata {
-    pub source_path: String,
-    pub source_revision: String,
-    pub title: String,
+pub(super) struct StoredChunkMetadata {
+    pub(super) source_path: String,
+    pub(super) source_revision: String,
+    pub(super) title: String,
     #[serde(default)]
-    pub chunk_text: String,
-    pub section_heading: Option<String>,
-    pub chunk_index: usize,
+    pub(super) chunk_text: String,
+    pub(super) section_heading: Option<String>,
+    pub(super) chunk_index: usize,
     #[serde(default)]
-    pub line_start: usize,
+    pub(super) line_start: usize,
     #[serde(default)]
-    pub line_end: usize,
+    pub(super) line_end: usize,
     #[serde(default)]
-    pub modified_at: Option<String>,
-    pub kind: StoredChunkKind,
+    pub(super) modified_at: Option<String>,
+    pub(super) kind: StoredChunkKind,
     #[serde(default)]
-    pub is_fresh: Option<bool>,
+    pub(super) is_fresh: Option<bool>,
 }
 
-impl From<StoredChunkKind> for ChunkKind {
+impl From<StoredChunkKind> for IndexKind {
     fn from(kind: StoredChunkKind) -> Self {
         match kind {
-            StoredChunkKind::File => ChunkKind::File,
-            StoredChunkKind::Git => ChunkKind::Git,
+            StoredChunkKind::File => IndexKind::File,
+            StoredChunkKind::Git => IndexKind::Git,
         }
     }
 }
 
-impl From<ChunkKind> for StoredChunkKind {
-    fn from(kind: ChunkKind) -> Self {
+impl From<IndexKind> for StoredChunkKind {
+    fn from(kind: IndexKind) -> Self {
         match kind {
-            ChunkKind::File => StoredChunkKind::File,
-            ChunkKind::Git => StoredChunkKind::Git,
+            IndexKind::File => StoredChunkKind::File,
+            IndexKind::Git => StoredChunkKind::Git,
         }
     }
 }
@@ -173,7 +173,7 @@ mod tests {
         };
 
         let rt: ChunkMetadata = stored.into();
-        assert_eq!(rt.doc_ctx.kind, ChunkKind::File);
+        assert_eq!(rt.doc_ctx.kind, IndexKind::File);
         assert_eq!(&*rt.doc_ctx.source_path, "doc.md");
     }
 
@@ -185,7 +185,7 @@ mod tests {
                 source_revision: Arc::from("abc"),
                 title: Arc::from("Doc"),
                 modified_at: None,
-                kind: ChunkKind::Git,
+                kind: IndexKind::Git,
             },
             chunk_text: "content".to_string(),
             section_heading: None,

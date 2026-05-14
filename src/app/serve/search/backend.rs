@@ -1,23 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use crate::index::embedder::Embedder;
+use crate::index::MergedIndex;
 use crate::index::VectorStore;
 
-// ---------------------------------------------------------------------------
-// ScoreBackend trait — a backend that scores every chunk against a query
-// ---------------------------------------------------------------------------
-
-/// A backend that produces one `f32` score per chunk for a given query string.
-/// The output vector has length equal to the number of chunks in the index.
 pub trait ScoreBackend: Send + Sync {
     fn score(&self, query: &str) -> anyhow::Result<Vec<f32>>;
 }
 
-// ---------------------------------------------------------------------------
-// VectorScoreBackend — cosine similarity against dense embeddings
-// ---------------------------------------------------------------------------
-
-pub struct VectorScoreBackend {
+pub(crate) struct VectorScoreBackend {
     embedder: Arc<Mutex<dyn Embedder>>,
     vectors: Arc<VectorStore>,
 }
@@ -52,10 +43,6 @@ impl ScoreBackend for VectorScoreBackend {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Bm25ScoreBackend — BM25 lexical matching
-// ---------------------------------------------------------------------------
-
 pub(crate) struct Bm25ScoreBackend {
     embedder: bm25::Embedder,
     scorer: bm25::Scorer<usize, u32>,
@@ -67,7 +54,6 @@ impl ScoreBackend for Bm25ScoreBackend {
         let query_embedding = self.embedder.embed(query);
         let scored_docs = self.scorer.matches(&query_embedding);
 
-        // Build dense score vector (index → score); default 0.0 for unmatched chunks
         let mut scores = vec![0.0f32; self.chunk_count];
         for result in scored_docs {
             if result.id < self.chunk_count {
@@ -79,11 +65,6 @@ impl ScoreBackend for Bm25ScoreBackend {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Factory function: construct Bm25ScoreBackend from embeddings + config
-// ---------------------------------------------------------------------------
-
-/// Build a `Bm25ScoreBackend` from pre-computed BM25 embeddings and config.
 pub(crate) fn build_bm25_backend(
     embeddings: &[bm25::Embedding<u32>],
     k1: f32,
@@ -107,10 +88,6 @@ pub(crate) fn build_bm25_backend(
     }
 }
 
-// ---------------------------------------------------------------------------
-// ZeroScoreBackend — returns all zeros (fallback when BM25 is unavailable)
-// ---------------------------------------------------------------------------
-
 pub(crate) struct ZeroScoreBackend {
     pub(crate) chunk_count: usize,
 }
@@ -121,9 +98,28 @@ impl ScoreBackend for ZeroScoreBackend {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+pub(super) fn build_backends(
+    merged: &MergedIndex,
+    embedder: Arc<Mutex<dyn Embedder>>,
+) -> (Arc<dyn ScoreBackend>, Arc<dyn ScoreBackend>) {
+    let vector_store = Arc::new(merged.vectors.clone());
+    let semantic = Arc::new(VectorScoreBackend::new(
+        embedder,
+        vector_store,
+    )) as Arc<dyn ScoreBackend>;
+
+    let bm25: Arc<dyn ScoreBackend> = match (&merged.bm25_embeddings, &merged.bm25_header) {
+        (Some(embeddings), Some(header)) => {
+            let backend = build_bm25_backend(embeddings, header.k1, header.b, header.avgdl);
+            Arc::new(backend)
+        }
+        _ => Arc::new(ZeroScoreBackend {
+            chunk_count: merged.metadata.len(),
+        }),
+    };
+
+    (semantic, bm25)
+}
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
@@ -134,10 +130,6 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
     dot / (norm_a * norm_b)
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -150,16 +142,15 @@ mod tests {
             Arc::new(Mutex::new(FakeEmbedder::new()));
         let vectors = Arc::new(
             VectorStore::from_vec_vec(vec![
-                vec![9.0, 2.0, 0.0, 1.0],  // parallel to query embedding → cos = 1.0
-                vec![5.0, 2.0, 0.0, 1.0],  // moderate similarity
-                vec![1.0, 2.0, 0.0, 1.0],  // lowest similarity
+                vec![9.0, 2.0, 0.0, 1.0],
+                vec![5.0, 2.0, 0.0, 1.0],
+                vec![1.0, 2.0, 0.0, 1.0],
             ])
             .unwrap(),
         );
         let backend = VectorScoreBackend::new(embedder, vectors);
         let scores = backend.score("some text").unwrap();
         assert_eq!(scores.len(), 3);
-        // Scores should be sorted descending (first result most similar)
         for i in 1..scores.len() {
             assert!(scores[i - 1] >= scores[i], "scores should be descending");
         }
@@ -183,7 +174,6 @@ mod tests {
             "Python is a programming language",
         ];
 
-        // Fit embedder to corpus to get realistic avgdl
         let embedder: bm25::Embedder<u32> =
             bm25::EmbedderBuilder::with_fit_to_corpus(bm25::Language::English, &corpus).build();
 
@@ -191,13 +181,11 @@ mod tests {
         let k1 = 1.2;
         let b = 0.75;
 
-        // Generate BM25 embeddings for each document
         let embeddings: Vec<bm25::Embedding<u32>> =
             corpus.iter().map(|doc| embedder.embed(doc)).collect();
 
         let backend = build_bm25_backend(&embeddings, k1, b, avgdl);
 
-        // Query about apples — should score doc 1 highest
         let scores = backend.score("apples").unwrap();
         assert_eq!(scores.len(), 3);
         assert!(
