@@ -4,7 +4,7 @@
 
 Every development cycle must be verified by:
 1. cargo test
-2. cargo clippy --fix --all-targets
+2. cargo clippy --all-targets
 
 After Web UI change (`src/ui/`):
 1. `cd src/ui`

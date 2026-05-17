@@ -90,11 +90,11 @@ mod tests {
     use crate::app::serve::ServeIndexAccess;
     use crate::config::IndexConfig;
     use crate::index::{
-        IndexRepository, IndexSizeInfo, LoadMergedResult, MergedIndex, SourceIndexKind,
+        IndexSizeInfo, LoadMergedResult, MergedIndex,
     };
     use crate::index::VectorStore;
     use crate::tests::fixtures::{
-        make_temp_dir, serve_config_fixture, create_minimal_file_index, FakeEmbedder, RecordingUi,
+        make_temp_dir, serve_config_fixture, create_minimal_file_index, RecordingUi,
     };
 
     struct FakeServeIndexAccess {

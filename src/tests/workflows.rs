@@ -10,7 +10,7 @@ use crate::domain::{IndexKind, ChunkMetadata, DocumentContext};
 use crate::index::{IndexRepository, SourceIndexKind, read_bm25_index};
 use crate::index::{MergedIndex, VectorStore};
 use crate::index::embedder::Embedder;
-use crate::app::serve::search::{SearchService, create_search_service};
+use crate::app::serve::search::{create_search_service};
 use crate::tests::fixtures::{make_temp_dir, read_index_at, create_test_token_counter, create_test_processor, create_minimal_file_index, FakeEmbedder};
 
 fn test_config(index_dir: &std::path::Path) -> IndexConfig {
