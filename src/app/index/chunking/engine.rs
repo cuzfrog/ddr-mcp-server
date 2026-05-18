@@ -65,7 +65,7 @@ pub(crate) fn chunk_document(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::fixtures::create_test_token_counter;
+    use crate::app::index::chunking::counter::MockTokenCounter;
 
     fn test_config() -> ChunkingConfig {
         ChunkingConfig {
@@ -74,13 +74,30 @@ mod tests {
         }
     }
 
+    fn make_token_counter() -> MockTokenCounter {
+        let mut mock = MockTokenCounter::new();
+        mock.expect_encode_with_offsets()
+            .returning(|text: &str| {
+                let mut offsets = Vec::new();
+                let mut pos = 0;
+                for word in text.split_whitespace() {
+                    let start = pos + text[pos..].find(word).unwrap();
+                    let end = start + word.len();
+                    offsets.push((start, end));
+                    pos = end;
+                }
+                (offsets.len(), offsets)
+            });
+        mock
+    }
+
     #[test]
     fn test_three_short_h2_sections() {
-        let token_counter = create_test_token_counter();
+        let token_counter = make_token_counter();
         let chunks = chunk_document(
             "## One\na b c\n## Two\nd e f\n## Three\ng h i",
             &test_config(),
-            &*token_counter,
+            &token_counter,
         );
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0].section_heading.as_deref(), Some("One"));
@@ -100,17 +117,17 @@ mod tests {
             chunk_size: 10,
             chunk_overlap: 0,
         };
-        let chunks = chunk_document(&body, &config, &*create_test_token_counter());
+        let chunks = chunk_document(&body, &config, &make_token_counter());
         assert!(chunks.len() >= 2, "Expected multiple overlapping chunks");
     }
 
     #[test]
     fn test_content_before_first_heading() {
-        let token_counter = create_test_token_counter();
+        let token_counter = make_token_counter();
         let chunks = chunk_document(
             "intro text here\n## Section A\nbody A",
             &test_config(),
-            &*token_counter,
+            &token_counter,
         );
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].section_heading, None);
@@ -122,7 +139,7 @@ mod tests {
         let chunks = chunk_document(
             "just a few words here",
             &test_config(),
-            &*create_test_token_counter(),
+            &make_token_counter(),
         );
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].section_heading, None);
@@ -133,8 +150,8 @@ mod tests {
     fn test_plain_text_over_chunk_size() {
         let words: Vec<&str> = (0..50).map(|_| "word").collect();
         let body = words.join(" ");
-        let token_counter = create_test_token_counter();
-        let chunks = chunk_document(&body, &test_config(), &*token_counter);
+        let token_counter = make_token_counter();
+        let chunks = chunk_document(&body, &test_config(), &token_counter);
         assert!(
             chunks.len() > 1,
             "Expected sliding window for oversized plain text"
@@ -143,21 +160,21 @@ mod tests {
 
     #[test]
     fn test_empty_body_zero_chunks() {
-        let token_counter = create_test_token_counter();
-        let chunks = chunk_document("", &test_config(), &*token_counter);
+        let token_counter = make_token_counter();
+        let chunks = chunk_document("", &test_config(), &token_counter);
         assert_eq!(chunks.len(), 0);
 
-        let chunks2 = chunk_document("   \n  \n  ", &test_config(), &*token_counter);
+        let chunks2 = chunk_document("   \n  \n  ", &test_config(), &token_counter);
         assert_eq!(chunks2.len(), 0);
     }
 
     #[test]
     fn test_h1_section_boundary() {
-        let token_counter = create_test_token_counter();
+        let token_counter = make_token_counter();
         let chunks = chunk_document(
             "# One\nbody\n# Two\nmore",
             &test_config(),
-            &*token_counter,
+            &token_counter,
         );
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].section_heading.as_deref(), Some("One"));
@@ -166,11 +183,11 @@ mod tests {
 
     #[test]
     fn test_h3_nested_under_h2() {
-        let token_counter = create_test_token_counter();
+        let token_counter = make_token_counter();
         let chunks = chunk_document(
             "## H2\nh2 body\n### H3\nh3 body\n## H2B\nmore",
             &test_config(),
-            &*token_counter,
+            &token_counter,
         );
         assert_eq!(chunks.len(), 3);
         assert_eq!(chunks[0].section_heading.as_deref(), Some("H2"));
@@ -186,8 +203,8 @@ mod tests {
             chunk_size: 10,
             chunk_overlap: 2,
         };
-        let token_counter = create_test_token_counter();
-        let chunks = chunk_document(&body, &config, &*token_counter);
+        let token_counter = make_token_counter();
+        let chunks = chunk_document(&body, &config, &token_counter);
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].token_count, 10);
     }
@@ -201,8 +218,8 @@ mod tests {
             chunk_size: 10,
             chunk_overlap: 2,
         };
-        let token_counter = create_test_token_counter();
-        let chunks = chunk_document(&body, &config, &*token_counter);
+        let token_counter = make_token_counter();
+        let chunks = chunk_document(&body, &config, &token_counter);
         let indices: Vec<usize> = chunks.iter().map(|c| c.chunk_index).collect();
         let expected: Vec<usize> = (0..chunks.len()).collect();
         assert_eq!(indices, expected);

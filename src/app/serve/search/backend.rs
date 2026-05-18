@@ -134,12 +134,12 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::fixtures::FakeEmbedder;
+    use crate::tests::mock_embedder::mock_embedder;
 
     #[test]
     fn test_vector_backend_scores_descending() {
         let embedder: Arc<Mutex<dyn Embedder>> =
-            Arc::new(Mutex::new(FakeEmbedder::new()));
+            Arc::new(Mutex::new(mock_embedder()));
         let vectors = Arc::new(
             VectorStore::from_vec_vec(vec![
                 vec![9.0, 2.0, 0.0, 1.0],
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_vector_backend_empty_vectors() {
         let embedder: Arc<Mutex<dyn Embedder>> =
-            Arc::new(Mutex::new(FakeEmbedder::new()));
+            Arc::new(Mutex::new(mock_embedder()));
         let vectors = Arc::new(VectorStore::from_vec_vec(vec![]).unwrap());
         let backend = VectorScoreBackend::new(embedder, vectors);
         let scores = backend.score("anything").unwrap();

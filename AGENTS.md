@@ -30,7 +30,7 @@
 - **Error handling:** Use `anyhow::Result` internally. At binary boundaries (CLI, MCP responses), convert to user-facing messages. No `.unwrap()` on fallible operations.
 - **No panics in library code.** Reserve `panic` for unreachable states only.
 - **Logging:** There is not dedicated logging framework in use. Logging simply means print messages to stdout/stderr by the UI abstraction in `src/support/ui.rs`. Do not use `eprintln!` for CLI user-facing messages, except for error and warning. The MCP server uses HTTP.
-- **Tests:** Each module has unit tests in a `#[cfg(test)] mod tests` block. Integration tests are under `src/tests/`. E2E tests are in `e2e-tests/`. E2E tests assume the binary is built and available. No `#[ignore]` tests, test must be runnable and provide coverage value. `mockall` is used for mocking dependencies in unit tests.
+- **Tests:** Each module has unit tests in a `#[cfg(test)] mod tests` block. Integration tests are under `src/tests/`. E2E tests are in `e2e-tests/`. E2E tests assume the binary is built and available. No `#[ignore]` tests, test must be runnable and provide coverage value. `mockall` is used for mocking dependencies in unit tests. For shared and manually created mocks, refer to @src/tests/MODULE.md
 - **Naming:** Snake_case for files and functions. Types are PascalCase. Constants are UPPER_SNAKE_CASE. Variable naming should be specific to carry their function. E.g. `token_counter` should not be `counter`, which can be confusing.
 - **No unsafe code.** No `unsafe` blocks unless absolutely required by FFI (fastembed/ort handle this internally).
 - **No Dead Code** No `allow(dead_code)`. It should only be used during long incremental refactors, and must be removed once possible.

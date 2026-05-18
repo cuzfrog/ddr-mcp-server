@@ -66,7 +66,7 @@ mod tests {
     use crate::config::{SearchConfig, FusionConfig, RankingConfig, Bm25Config};
     use crate::index::MergedIndex;
     use crate::index::VectorStore;
-    use crate::tests::fixtures::FakeEmbedder;
+    use crate::tests::mock_embedder::mock_embedder;
 
     fn default_search_config() -> SearchConfig {
         SearchConfig {
@@ -96,7 +96,7 @@ mod tests {
             built_at: "now".to_string(),
         };
         let embedder: Arc<Mutex<dyn Embedder>> =
-            Arc::new(Mutex::new(FakeEmbedder::new()));
+            Arc::new(Mutex::new(mock_embedder()));
         let search_config = default_search_config();
         let result = create_search_service(merged, embedder, &search_config);
         assert!(result.is_ok());

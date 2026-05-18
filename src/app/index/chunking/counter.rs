@@ -2,37 +2,11 @@
 // TokenCounter trait — swappable tokenizer abstraction
 // ---------------------------------------------------------------------------
 
+#[cfg_attr(test, mockall::automock)]
 pub trait TokenCounter: Send + Sync {
     /// Encode `text` and return (total_token_count, Vec<(byte_start, byte_end)>).
     /// `byte_start` and `byte_end` are UTF-8 byte offsets into the original `text`.
     fn encode_with_offsets(&self, text: &str) -> (usize, Vec<(usize, usize)>);
-}
-
-// ---------------------------------------------------------------------------
-// WhitespaceTokenCounter — mock for unit tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-pub(crate) struct WhitespaceTokenCounter;
-
-#[cfg(test)]
-impl TokenCounter for WhitespaceTokenCounter {
-    fn encode_with_offsets(&self, text: &str) -> (usize, Vec<(usize, usize)>) {
-        let mut offsets = Vec::new();
-        let mut byte_pos = 0;
-
-        let trimmed = text;
-        for word in trimmed.split_whitespace() {
-            if let Some(pos) = trimmed[byte_pos..].find(word) {
-                let start = byte_pos + pos;
-                let end = start + word.len();
-                offsets.push((start, end));
-                byte_pos = end;
-            }
-        }
-
-        (offsets.len(), offsets)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -62,9 +36,26 @@ mod tests {
         counter.encode_with_offsets(text).0
     }
 
+    fn make_mock_counter() -> MockTokenCounter {
+        let mut mock = MockTokenCounter::new();
+        mock.expect_encode_with_offsets()
+            .returning(|text: &str| {
+                let mut offsets = Vec::new();
+                let mut pos = 0;
+                for word in text.split_whitespace() {
+                    let start = pos + text[pos..].find(word).unwrap();
+                    let end = start + word.len();
+                    offsets.push((start, end));
+                    pos = end;
+                }
+                (offsets.len(), offsets)
+            });
+        mock
+    }
+
     #[test]
     fn test_whitespace_counter_basics() {
-        let counter = WhitespaceTokenCounter;
+        let counter = make_mock_counter();
         assert_eq!(count_tokens(&counter, ""), 0);
         assert_eq!(count_tokens(&counter, "   "), 0);
         assert_eq!(count_tokens(&counter, "hello"), 1);

@@ -67,7 +67,9 @@ mod tests {
     use crate::config::IndexConfig;
     use crate::domain::IndexKind;
     use crate::index::{IndexRepository, SourceIndexKind};
-    use crate::tests::fixtures::{make_temp_dir, FakeEmbedder, test_processor, create_test_token_counter, create_test_processor};
+    use crate::tests::fixtures::{make_temp_dir, test_processor, create_test_processor};
+    use crate::tests::mock_embedder::mock_embedder;
+    use crate::tests::mock_token_counter::mock_token_counter;
 
     fn write_file(dir: &std::path::Path, name: &str, content: &str) {
         std::fs::write(dir.join(name), content).unwrap();
@@ -75,7 +77,7 @@ mod tests {
 
     fn create_index_at(persist: &std::path::Path, config: &IndexConfig, bm25_k1: f32, bm25_b: f32) {
         let repo = IndexRepository::new(persist, config, bm25_k1, bm25_b);
-        let embedder = FakeEmbedder::new();
+        let embedder = mock_embedder();
         let doc = crate::app::index::pipeline::IndexableDocument {
             source_path: "existing.md".to_string(),
             source_revision: "oldhash".to_string(),
@@ -85,7 +87,7 @@ mod tests {
             kind: IndexKind::File,
             is_fresh: None,
         };
-        let chunker = create_chunker(config.chunk_size, config.chunk_overlap, create_test_token_counter());
+        let chunker = create_chunker(config.chunk_size, config.chunk_overlap, Box::new(mock_token_counter()));
         let processor = create_test_processor(
             Box::new(embedder),
             chunker,

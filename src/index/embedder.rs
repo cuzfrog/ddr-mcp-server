@@ -1,7 +1,8 @@
 use crate::models::EmbeddingModel;
 
+#[cfg_attr(test, mockall::automock)]
 pub trait Embedder: Send {
-    fn embed(&mut self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>>;
+    fn embed<'a>(&mut self, texts: &[&'a str]) -> anyhow::Result<Vec<Vec<f32>>>;
     fn dims(&self) -> usize;
 }
 

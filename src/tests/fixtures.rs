@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use crate::app::index::chunking::counter::TokenCounter;
 use crate::app::index::chunking::{create_chunker, Chunk, Chunker};
 use crate::app::index::pipeline::{IndexingProcessor, IndexableDocument, IndexedBatch};
 use crate::config::{Config, FileConfig, GitConfig, IndexConfig};
@@ -191,54 +190,7 @@ pub fn read_index_at(
     (stored.header, stored.vectors, stored.metadata)
 }
 
-// ---------------------------------------------------------------------------
-// FakeEmbedder — deterministic embedding for tests
-// ---------------------------------------------------------------------------
 
-/// A deterministic fake embedder for use in tests.
-///
-/// Maps text to a 4-dimensional vector derived from:
-/// - text length (bytes)
-/// - word count (whitespace-split)
-/// - digit count
-/// - a constant bias of 1.0
-///
-/// Every call with the same input produces the same vector.
-pub struct FakeEmbedder {
-    dims: usize,
-}
-
-impl FakeEmbedder {
-    pub fn new() -> Self {
-        Self { dims: 4 }
-    }
-}
-
-impl Embedder for FakeEmbedder {
-    fn embed(&mut self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
-        Ok(texts
-            .iter()
-            .map(|text| {
-                let len = text.len() as f32;
-                let word_count = text.split_whitespace().count() as f32;
-                let digit_count = text.chars().filter(|c| c.is_ascii_digit()).count() as f32;
-                vec![len, word_count, digit_count, 1.0]
-            })
-            .collect())
-    }
-
-    fn dims(&self) -> usize {
-        self.dims
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Test token counter — whitespace-based counter for tests
-// ---------------------------------------------------------------------------
-
-pub fn create_test_token_counter() -> Box<dyn TokenCounter> {
-    Box::new(crate::app::index::chunking::counter::WhitespaceTokenCounter)
-}
 
 // ---------------------------------------------------------------------------
 // TestIndexingProcessor — lightweight indexing processor for tests
@@ -315,10 +267,10 @@ pub fn create_test_processor(
     Box::new(TestIndexingProcessor::new(chunker, embedder))
 }
 
-/// Create a test processor with a FakeEmbedder and a whitespace token counter.
+/// Create a test processor with a deterministic mock embedder and whitespace token counter.
 pub fn test_processor() -> Box<dyn IndexingProcessor> {
-    let embedder = Box::new(FakeEmbedder::new());
-    let chunker = create_chunker(256, 32, create_test_token_counter());
+    let embedder = Box::new(crate::tests::mock_embedder::mock_embedder());
+    let chunker = create_chunker(256, 32, Box::new(crate::tests::mock_token_counter::mock_token_counter()));
     Box::new(TestIndexingProcessor::new(chunker, embedder))
 }
 
@@ -339,7 +291,6 @@ pub fn create_minimal_file_index(persist_path: &Path) {
 
     let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
 
-    let embedder = FakeEmbedder::new();
     let doc = IndexableDocument {
         source_path: "test.md".to_string(),
         source_revision: "abc".to_string(),
@@ -352,10 +303,10 @@ pub fn create_minimal_file_index(persist_path: &Path) {
     let chunker = create_chunker(
         config.chunk_size,
         config.chunk_overlap,
-        create_test_token_counter(),
+        Box::new(crate::tests::mock_token_counter::mock_token_counter()),
     );
     let processor = create_test_processor(
-        Box::new(embedder),
+        Box::new(crate::tests::mock_embedder::mock_embedder()),
         chunker,
     );
     let (batch, dims) = processor.run(&[doc], None).unwrap();
@@ -364,17 +315,7 @@ pub fn create_minimal_file_index(persist_path: &Path) {
         .unwrap();
 }
 
-// ---------------------------------------------------------------------------
-// NoopProgress — does nothing, useful when test does not care about progress
-// ---------------------------------------------------------------------------
 
-pub(crate) struct NoopProgress;
-
-impl crate::support::progress::ProgressSink for NoopProgress {
-    fn tick(&self, _n: u64) {}
-    fn tick_msg(&self, _msg: &str) {}
-    fn finish(&self) {}
-}
 
 // ---------------------------------------------------------------------------
 // RecordingUi — records all interaction for test assertions
@@ -430,6 +371,10 @@ impl crate::support::ui::Console for RecordingUi {
     fn progress(&self, _total: u64, _label: &str) -> Box<dyn crate::support::progress::ProgressSink> {
         self.progress_calls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Box::new(NoopProgress)
+        let mut mock = crate::support::progress::MockProgressSink::new();
+        mock.expect_tick().returning(|_| {}).times(..);
+        mock.expect_tick_msg().returning(|_| {}).times(..);
+        mock.expect_finish().returning(|| {}).times(..);
+        Box::new(mock)
     }
 }

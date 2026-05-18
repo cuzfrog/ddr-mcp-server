@@ -4,6 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 // ProgressSink — abstract progress reporting (no concrete UI dependency)
 // ---------------------------------------------------------------------------
 
+#[cfg_attr(test, mockall::automock)]
 pub trait ProgressSink: Send {
     fn tick(&self, n: u64);
     fn tick_msg(&self, msg: &str);

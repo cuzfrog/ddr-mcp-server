@@ -11,7 +11,9 @@ use crate::index::{IndexRepository, SourceIndexKind, read_bm25_index};
 use crate::index::{MergedIndex, VectorStore};
 use crate::index::embedder::Embedder;
 use crate::app::serve::search::{create_search_service};
-use crate::tests::fixtures::{make_temp_dir, read_index_at, create_test_token_counter, create_test_processor, create_minimal_file_index, FakeEmbedder};
+use crate::tests::fixtures::{make_temp_dir, read_index_at, create_test_processor, create_minimal_file_index};
+use crate::tests::mock_embedder::mock_embedder;
+use crate::tests::mock_token_counter::mock_token_counter;
 
 fn test_config(index_dir: &std::path::Path) -> IndexConfig {
     IndexConfig {
@@ -58,8 +60,8 @@ fn test_index_and_store_round_trip() {
     let docs = vec![sample_doc_a(), sample_doc_b()];
     let config = test_config(&index_dir);
 
-    let embedder = FakeEmbedder::new();
-    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, create_test_token_counter());
+    let embedder = mock_embedder();
+    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, Box::new(mock_token_counter()));
     let processor = create_test_processor(
         Box::new(embedder),
         chunker,
@@ -97,8 +99,8 @@ fn test_empty_document_list_produces_empty_index() {
     let docs: Vec<IndexableDocument> = vec![];
     let config = test_config(&index_dir);
 
-    let embedder = FakeEmbedder::new();
-    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, create_test_token_counter());
+    let embedder = mock_embedder();
+    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, Box::new(mock_token_counter()));
     let processor = create_test_processor(
         Box::new(embedder),
         chunker,
@@ -129,16 +131,16 @@ fn test_vectors_are_deterministic() {
     let docs = vec![sample_doc_a()];
     let config = test_config(&index_dir);
 
-    let embedder = FakeEmbedder::new();
-    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, create_test_token_counter());
+    let embedder = mock_embedder();
+    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, Box::new(mock_token_counter()));
     let processor = create_test_processor(
         Box::new(embedder),
         chunker,
     );
     let (batch1, _dims) = processor.run(&docs, None).unwrap();
 
-    let embedder2 = FakeEmbedder::new();
-    let chunker2 = create_chunker(config.chunk_size, config.chunk_overlap, create_test_token_counter());
+    let embedder2 = mock_embedder();
+    let chunker2 = create_chunker(config.chunk_size, config.chunk_overlap, Box::new(mock_token_counter()));
     let processor2 = create_test_processor(
         Box::new(embedder2),
         chunker2,
@@ -160,8 +162,8 @@ fn test_index_preserves_metadata_fields() {
     let docs = vec![sample_doc_a(), sample_doc_b()];
     let config = test_config(&index_dir);
 
-    let embedder = FakeEmbedder::new();
-    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, create_test_token_counter());
+    let embedder = mock_embedder();
+    let chunker = create_chunker(config.chunk_size, config.chunk_overlap, Box::new(mock_token_counter()));
     let processor = create_test_processor(
         Box::new(embedder),
         chunker,
@@ -206,7 +208,7 @@ fn create_git_index_without_bm25(persist_path: &Path) {
     };
     let repo = IndexRepository::new(persist_path, &config, 1.2, 0.75);
 
-    let embedder = FakeEmbedder::new();
+    let embedder = mock_embedder();
     let doc = IndexableDocument {
         source_path: "git-file.md".to_string(),
         source_revision: "def".to_string(),
@@ -220,7 +222,7 @@ fn create_git_index_without_bm25(persist_path: &Path) {
     let chunker = create_chunker(
         config.chunk_size,
         config.chunk_overlap,
-        create_test_token_counter(),
+        Box::new(mock_token_counter()),
     );
     let processor = create_test_processor(
         Box::new(embedder),
@@ -358,7 +360,7 @@ fn idempotent_bm25_repair() {
 
     let repo = IndexRepository::new(&persist, &config, 1.2, 0.75);
 
-    let embedder = FakeEmbedder::new();
+    let embedder = mock_embedder();
     let doc = IndexableDocument {
         source_path: "test.md".to_string(),
         source_revision: "abc".to_string(),
@@ -371,7 +373,7 @@ fn idempotent_bm25_repair() {
     let chunker = create_chunker(
         config.chunk_size,
         config.chunk_overlap,
-        create_test_token_counter(),
+        Box::new(mock_token_counter()),
     );
     let processor = create_test_processor(
         Box::new(embedder),
@@ -465,7 +467,7 @@ async fn test_missing_bm25_uses_zero_backend() -> anyhow::Result<()> {
     };
 
     let embedder: Arc<Mutex<dyn Embedder>> =
-        Arc::new(Mutex::new(FakeEmbedder::new()));
+        Arc::new(Mutex::new(mock_embedder()));
     let search_config = default_search_config();
 
     let search_service = create_search_service(merged, embedder, &search_config)?;
