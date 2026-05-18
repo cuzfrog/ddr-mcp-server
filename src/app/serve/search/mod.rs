@@ -62,15 +62,7 @@ pub fn create_search_service(
     Ok(Arc::new(svc) as Arc<dyn SearchService>)
 }
 
-pub(crate) struct SearchStack {
-    pub(crate) search_service: Arc<dyn SearchService>,
-}
 
-impl std::fmt::Debug for SearchStack {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SearchStack").finish_non_exhaustive()
-    }
-}
 
 pub(crate) trait ServeIndexAccess: Send + Sync {
     fn check_size(
@@ -129,11 +121,11 @@ impl ServeIndexAccess for ServeIndexAccessImpl {
     }
 }
 
-pub(crate) fn build_search_stack(
+pub(crate) fn build_search_service(
     index_access: &dyn ServeIndexAccess,
     config: &Config,
     console: &dyn Console,
-) -> anyhow::Result<SearchStack> {
+) -> anyhow::Result<Arc<dyn SearchService>> {
     let persist_path = config.persist_path_buf();
 
     if let Some(info) = index_access.check_size(&persist_path, config.index.max_size_mb)? {
@@ -184,7 +176,7 @@ pub(crate) fn build_search_stack(
         Arc::new(Mutex::new(create_embedder(model)));
     let search_service = create_search_service(merged, embedder, &config.search)?;
 
-    Ok(SearchStack { search_service })
+    Ok(search_service)
 }
 
 #[cfg(test)]

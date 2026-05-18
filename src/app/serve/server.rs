@@ -7,7 +7,7 @@ use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
 
-use crate::app::serve::search::{build_search_stack, SearchStack, ServeIndexAccessImpl};
+use crate::app::serve::search::{build_search_service, SearchService, ServeIndexAccessImpl};
 use crate::config::Config;
 use crate::mcp::DocentMcpServer;
 use crate::mcp::SearchExecutor;
@@ -30,8 +30,8 @@ struct TokioHttpServer {
 #[async_trait]
 impl Server for TokioHttpServer {
     async fn serve(&self) -> anyhow::Result<()> {
-        let stack = build_search_stack(&ServeIndexAccessImpl, &self.config, &*self.console)?;
-        let router = prepare_router(&stack)?;
+        let search_service = build_search_service(&ServeIndexAccessImpl, &self.config, &*self.console)?;
+        let router = prepare_router(&search_service)?;
 
         let addr = format!("127.0.0.1:{}", self.config.server.port);
         let listener = tokio::net::TcpListener::bind(&addr)
@@ -65,8 +65,8 @@ async fn shutdown_signal() {
     }
 }
 
-fn prepare_router(stack: &SearchStack) -> anyhow::Result<Router> {
-    let server = DocentMcpServer { search_executor: SearchExecutor::new(Arc::clone(&stack.search_service)) };
+fn prepare_router(search_service: &Arc<dyn SearchService>) -> anyhow::Result<Router> {
+    let server = DocentMcpServer { search_executor: SearchExecutor::new(Arc::clone(search_service)) };
     let service: StreamableHttpService<DocentMcpServer, LocalSessionManager> =
         StreamableHttpService::new(
             {
@@ -85,7 +85,7 @@ fn prepare_router(stack: &SearchStack) -> anyhow::Result<Router> {
 mod tests {
     use std::path::Path;
 
-    use crate::app::serve::search::build_search_stack;
+    use crate::app::serve::search::build_search_service;
     use crate::app::serve::server::prepare_router;
     use crate::app::serve::search::ServeIndexAccess;
     use crate::config::IndexConfig;
@@ -166,10 +166,10 @@ mod tests {
         let index_access = FakeServeIndexAccess::new().with_oversized();
         let console = RecordingUi::never_confirm();
 
-        let result = build_search_stack(&index_access, &config, &console);
+        let result = build_search_service(&index_access, &config, &console);
         assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("Aborted"), "Expected abort error, got: {}", err);
+        let err = result.err().unwrap();
+        assert!(err.to_string().contains("Aborted"), "Expected abort error, got: {}", err);
 
         let _ = std::fs::remove_dir_all(&persist);
     }
@@ -184,7 +184,7 @@ mod tests {
         let index_access = FakeServeIndexAccess::new().with_oversized();
         let console = RecordingUi::always_confirm();
 
-        let result = build_search_stack(&index_access, &oversized_config, &console);
+        let result = build_search_service(&index_access, &oversized_config, &console);
         assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);
@@ -197,9 +197,9 @@ mod tests {
         let index_access = FakeServeIndexAccess::new().with_load_error();
         let console = RecordingUi::always_confirm();
 
-        let result = build_search_stack(&index_access, &config, &console);
+        let result = build_search_service(&index_access, &config, &console);
         assert!(result.is_err());
-        let err = result.unwrap_err();
+        let err = result.err().unwrap();
         let display = err.to_string();
         assert!(
             display.contains("Failed to load merged index"),
@@ -224,24 +224,24 @@ mod tests {
         let index_access = FakeServeIndexAccess::new();
         let console = RecordingUi::always_confirm();
 
-        let result = build_search_stack(&index_access, &config, &console);
+        let result = build_search_service(&index_access, &config, &console);
         assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);
     }
 
     #[test]
-    fn prepare_router_works_with_search_stack() {
+    fn prepare_router_works_with_search_service() {
         let persist = make_temp_dir("serve_prepare_router");
         create_minimal_file_index(&persist);
         let config = serve_config_fixture(&persist);
         let index_access = FakeServeIndexAccess::new();
         let console = RecordingUi::always_confirm();
 
-        let stack = build_search_stack(&index_access, &config, &console)
-            .expect("build_search_stack should succeed");
+        let search_service = build_search_service(&index_access, &config, &console)
+            .expect("build_search_service should succeed");
 
-        let result = prepare_router(&stack);
+        let result = prepare_router(&search_service);
         assert!(result.is_ok(), "Expected prepare_router to succeed, got: {:?}", result.err());
 
         let _ = std::fs::remove_dir_all(&persist);
