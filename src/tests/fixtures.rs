@@ -10,7 +10,7 @@ use crate::index::embedder::Embedder;
 
 use crate::index::VectorStore;
 use crate::index::{IndexRepository, SourceIndexKind};
-use crate::support::progress::ProgressSink;
+use crate::support::progress::Progress;
 
 // ---------------------------------------------------------------------------
 // Config fixture helpers — produce valid config types without touching Config::default()
@@ -213,7 +213,7 @@ impl IndexingProcessor for TestIndexingProcessor {
     fn run(
         &self,
         docs: &[IndexableDocument],
-        _progress: Option<&dyn ProgressSink>,
+        _progress: Option<&dyn Progress>,
     ) -> anyhow::Result<(IndexedBatch, usize)> {
         let mut all_chunks: Vec<(usize, Chunk)> = Vec::new();
         for (i, doc) in docs.iter().enumerate() {
@@ -368,10 +368,10 @@ impl crate::support::ui::Console for RecordingUi {
         Ok(responses.get(idx).copied().unwrap_or(true))
     }
 
-    fn progress(&self, _total: u64, _label: &str) -> Box<dyn crate::support::progress::ProgressSink> {
+    fn progress(&self, _total: u64, _label: &str) -> Box<dyn crate::support::progress::Progress> {
         self.progress_calls
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let mut mock = crate::support::progress::MockProgressSink::new();
+        let mut mock = crate::support::progress::MockProgress::new();
         mock.expect_tick().returning(|_| {}).times(..);
         mock.expect_tick_msg().returning(|_| {}).times(..);
         mock.expect_finish().returning(|| {}).times(..);

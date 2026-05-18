@@ -7,7 +7,7 @@ use crate::domain::ChunkMetadata;
 use crate::index::embedder::{create_embedder, Embedder};
 use crate::models::ModelFactory;
 use crate::domain::{IndexableDocument, IndexedBatch};
-use crate::support::progress::ProgressSink;
+use crate::support::progress::Progress;
 
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +18,7 @@ pub trait IndexingProcessor: Send + Sync {
     fn run(
         &self,
         docs: &[IndexableDocument],
-        progress: Option<&dyn ProgressSink>,
+        progress: Option<&dyn Progress>,
     ) -> anyhow::Result<(IndexedBatch, usize)>;
 }
 
@@ -43,7 +43,7 @@ impl IndexingProcessor for ParallelBatchIndexingProcessor {
     fn run(
         &self,
         docs: &[IndexableDocument],
-        progress: Option<&dyn ProgressSink>,
+        progress: Option<&dyn Progress>,
     ) -> anyhow::Result<(IndexedBatch, usize)> {
         let all_chunks = self.chunk_documents(docs, progress);
 
@@ -91,7 +91,7 @@ impl ParallelBatchIndexingProcessor {
     fn chunk_documents(
         &self,
         docs: &[IndexableDocument],
-        progress: Option<&dyn ProgressSink>,
+        progress: Option<&dyn Progress>,
     ) -> Vec<(usize, Chunk)> {
         struct DocChunksResult {
             doc_index: usize,
@@ -131,7 +131,7 @@ impl ParallelBatchIndexingProcessor {
 mod tests {
     use super::*;
     use crate::domain::IndexKind;
-    use crate::support::progress::MockProgressSink;
+    use crate::support::progress::MockProgress;
     use crate::tests::mock_embedder::mock_embedder;
     use crate::tests::mock_token_counter::mock_token_counter;
     use std::sync::Arc;
@@ -203,7 +203,7 @@ mod tests {
         let total_ticked = Arc::new(AtomicU64::new(0));
         let tick_accum = total_ticked.clone();
 
-        let mut mock_progress = MockProgressSink::new();
+        let mut mock_progress = MockProgress::new();
         mock_progress.expect_tick()
             .returning(move |n| { tick_accum.fetch_add(n, Ordering::SeqCst); });
         // tick_msg and finish are never called by the engine — no expectations needed

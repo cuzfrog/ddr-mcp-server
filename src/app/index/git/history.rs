@@ -1,6 +1,6 @@
 use crate::config::GitConfig;
 use crate::support::glob::matches_any_pattern;
-use crate::support::progress::ProgressSink;
+use crate::support::progress::Progress;
 use std::path::Path;
 
 pub(crate) fn open_repo_and_branch(
@@ -35,7 +35,7 @@ struct CommitWalker<'a> {
     rebuild: bool,
     last_indexed_commit: Option<&'a str>,
     verbose: bool,
-    progress: Option<&'a dyn ProgressSink>,
+    progress: Option<&'a dyn Progress>,
     commit_count: usize,
 }
 
@@ -145,7 +145,7 @@ pub fn index_git_history(
     last_indexed_commit: Option<&str>,
     rebuild: bool,
     verbose: bool,
-    progress: Option<&dyn ProgressSink>,
+    progress: Option<&dyn Progress>,
 ) -> anyhow::Result<Vec<crate::app::index::git::extract::GitDocument>> {
     let (repo, tip_oid) = open_repo_and_branch(repo_path, &git_config.branch)?;
     let mut revwalk = repo.revwalk()?;
